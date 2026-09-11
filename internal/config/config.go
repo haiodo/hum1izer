@@ -120,6 +120,8 @@ var langExt = map[string][]string{
 	"js":     {".js", ".jsx", ".mjs", ".cjs"},
 	"svelte": {".svelte"},
 	"swift":  {".swift"},
+	"java":   {".java"},
+	"kotlin": {".kt", ".kts"},
 }
 
 func Langs() []string {

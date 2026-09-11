@@ -54,15 +54,17 @@ const usage = `hum1izer - проверка текста, комментарие�
   --write-baseline  перезаписать снимок текущими находками
 
 Вывод:
-  --format  text (по умолчанию), jsonl, json, quiet
+  --format  text (по умолчанию), md, jsonl, json, quiet
   --limit N сколько блоков отдать, 0 - все. Первыми идут самые грязные
   --top N   сколько строк показать в сводке, 0 - все (по умолчанию 12)
   --json    то же, что --format json
   --quiet   то же, что --format quiet
 
-jsonl - формат для агента: одна строка JSON на комментарий, внутри исходный
-текст в поле raw и все находки по нему. Агент правит блок целиком, заменяет raw
+md - формат для агента: заголовок на комментарий, список замечаний и сам текст
+в огороженном блоке, байт в байт. Агент правит блок целиком, заменяет текст
 точным совпадением и запускает проверку снова, пока remaining не станет нулём.
+jsonl - то же самое машинно, по строке JSON на комментарий. Текст там
+экранирован, поэтому для точной замены он менее удобен.
 
 Код возврата: 0 чисто, 1 есть жёсткие находки, 2 ошибка.
 `
@@ -79,7 +81,7 @@ func main() {
 
 	genre := flag.String("genre", "marketing", "жанр текста")
 	lang := flag.String("lang", "ru", "язык набора правил: ru или en")
-	format := flag.String("format", "text", "формат вывода: text, jsonl, json, quiet")
+	format := flag.String("format", "text", "формат вывода: text, md, jsonl, json, quiet")
 	asJSON := flag.Bool("json", false, "то же, что --format json")
 	quiet := flag.Bool("quiet", false, "то же, что --format quiet")
 	top := flag.Int("top", 12, "сколько строк показать в сводке")
@@ -325,6 +327,8 @@ func runCode(args []string, o codeOpts) int {
 		}
 	}
 	switch o.format {
+	case "md":
+		printMarkdown(items, o.limit, files, blocks)
 	case "jsonl":
 		printJSONL(items, o.limit, files, blocks)
 	case "json":

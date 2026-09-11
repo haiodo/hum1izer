@@ -228,9 +228,8 @@ var parsers = map[string]func(string) bool{
 	"svelte": parsesAsJS(api.LoaderTS),
 }
 
-// parsesAsJS: esbuild разбирает тело комментария как исходник. Ошибок нет -
-// значит код. Своего парсера TS в stdlib нет, а тащить typescript-go нельзя:
-// его пакеты лежат под internal.
+// parsesAsJS: esbuild разбирает тело комментария, ошибок нет - значит код.
+// Парсера TS в stdlib нет, а у typescript-go всё лежит под internal.
 func parsesAsJS(loader api.Loader) func(string) bool {
 	return func(text string) bool {
 		r := api.Transform(text, api.TransformOptions{Loader: loader, LogLevel: api.LogLevelSilent})

@@ -399,3 +399,48 @@ func TestCommentedOutCodeTS(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractJava(t *testing.T) {
+	src := "class A {\n" +
+		"    // обычный комментарий\n" +
+		"    String s = \"\"\"\n        // не комментарий, это текстовый блок\n        \"\"\";\n" +
+		"    int x = 1; // хвостовой\n" +
+		"}\n"
+	got := extract(t, "A.java", src)
+	if len(got) != 2 {
+		t.Fatalf("блоков: %d, ожидалось 2: %q", len(got), texts(got))
+	}
+	if got[0].Text != "обычный комментарий" {
+		t.Errorf("первый блок: %q", got[0].Text)
+	}
+	if got[1].Text != "хвостовой" {
+		t.Errorf("второй блок: %q", got[1].Text)
+	}
+}
+
+func TestExtractKotlin(t *testing.T) {
+	src := "fun f() {\n" +
+		"    /* внешний /* вложенный */ всё ещё комментарий */\n" +
+		"    val s = \"\"\"// не комментарий\"\"\"\n" +
+		"    val c = '\\''  // хвост после символа\n" +
+		"}\n"
+	got := extract(t, "a.kt", src)
+	if len(got) != 2 {
+		t.Fatalf("блоков: %d, ожидалось 2: %q", len(got), texts(got))
+	}
+	if !strings.Contains(got[0].Text, "всё ещё комментарий") {
+		t.Errorf("вложенный блок закрылся рано: %q", got[0].Text)
+	}
+	if got[1].Text != "хвост после символа" {
+		t.Errorf("второй блок: %q", got[1].Text)
+	}
+}
+
+func TestKotlinLangDetected(t *testing.T) {
+	for name, want := range map[string]string{"a.kt": "kotlin", "a.kts": "kotlin", "A.java": "java"} {
+		got := extract(t, name, "// комментарий\nclass A {}\n")
+		if len(got) == 0 || got[0].Lang != want {
+			t.Errorf("%s: язык %q, ожидался %q", name, got[0].Lang, want)
+		}
+	}
+}

@@ -221,6 +221,76 @@ func printJSONL(items []code.Item, limit, files, blocks int) {
 		len(items), len(shown), countFindings(items), blocks, files)
 }
 
+// printMarkdown - формат для агента. В JSON текст экранирован, и чтобы заменить
+// его точным совпадением, модели пришлось бы развернуть экранирование в уме.
+func printMarkdown(items []code.Item, limit, files, blocks int) {
+	shown := cut(items, limit)
+	for _, it := range shown {
+		fmt.Printf("## %s\n", it.ID)
+		fmt.Printf("`%s`, %s, вес %d, %s\n\n", it.Lang, it.Kind, it.Score, it.Hash)
+		for _, g := range groupFindings(it.Findings) {
+			mark := ""
+			if g.hard {
+				mark = "жёсткое, "
+			}
+			fmt.Printf("- **%s** (%sстр. %s)", g.rule, mark, joinInts(g.lines))
+			if g.fix != "" {
+				fmt.Printf(" - %s", g.fix)
+			}
+			fmt.Println()
+		}
+		fence := fenceFor(it.Raw)
+		fmt.Printf("\n%s\n%s\n%s\n\n", fence, it.Raw, fence)
+	}
+	fmt.Fprintf(os.Stderr, "remaining=%d shown=%d findings=%d comments=%d files=%d\n",
+		len(items), len(shown), countFindings(items), blocks, files)
+}
+
+// groupFindings схлопывает одно правило в одну строку со списком строк:
+// четыре одинаковых пункта подряд агенту ничего не добавляют.
+type findingGroup struct {
+	rule, fix string
+	lines     []int
+	hard      bool
+}
+
+func groupFindings(f []code.ItemFinding) []findingGroup {
+	var out []findingGroup
+	idx := map[string]int{}
+	for _, x := range f {
+		if i, ok := idx[x.Rule]; ok {
+			out[i].lines = append(out[i].lines, x.Line)
+			continue
+		}
+		idx[x.Rule] = len(out)
+		out = append(out, findingGroup{rule: x.Rule, fix: x.Fix, lines: []int{x.Line}, hard: x.Hard})
+	}
+	return out
+}
+
+func joinInts(n []int) string {
+	parts := make([]string, len(n))
+	for i, v := range n {
+		parts[i] = strconv.Itoa(v)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// fenceFor: забор длиннее самой длинной цепочки кавычек внутри текста, иначе
+// комментарий с блоком кода развалит разметку.
+func fenceFor(text string) string {
+	longest, run := 0, 0
+	for _, r := range text {
+		if r == '`' {
+			run++
+			longest = max(longest, run)
+			continue
+		}
+		run = 0
+	}
+	return strings.Repeat("`", max(3, longest+1))
+}
+
 func printFindingsJSON(items []code.Item, limit int) {
 	out := []code.Finding{}
 	for _, it := range cut(items, limit) {

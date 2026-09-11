@@ -61,7 +61,7 @@ func TestUnknownKeyFails(t *testing.T) {
 
 func TestUnknownLangFails(t *testing.T) {
 	dir := t.TempDir()
-	writeCfg(t, dir, "version: 1\nlanguages:\n  ignore: [kotlin]\n")
+	writeCfg(t, dir, "version: 1\nlanguages:\n  ignore: [brainfuck]\n")
 	if _, err := Find(dir); err == nil {
 		t.Error("неизвестный язык принят молча")
 	}

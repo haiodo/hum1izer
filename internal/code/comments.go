@@ -143,14 +143,18 @@ func ExtractComments(path string) ([]Comment, error) {
 	switch filepath.Ext(path) {
 	case ".go":
 		if spans, err = goSpans(path, src); err != nil {
-			spans = scanC(string(src), false) // файл не парсится - падаем на сканер
+			spans = scanC(string(src), cOpts{}) // файл не парсится - падаем на сканер
 		}
 	case ".svelte":
 		spans = scanSvelte(string(src))
 	case ".swift":
-		spans = scanC(string(src), false)
+		spans = scanC(string(src), cOpts{})
+	case ".java":
+		spans = scanC(string(src), cOpts{tripleQuote: true})
+	case ".kt", ".kts":
+		spans = scanC(string(src), cOpts{tripleQuote: true, nestedBlock: true})
 	default:
-		spans = scanC(string(src), true)
+		spans = scanC(string(src), cOpts{regexLit: true})
 	}
 
 	text := string(src)
@@ -213,10 +217,16 @@ func goSpans(path string, src []byte) ([]span, error) {
 	return out, nil
 }
 
-// scanC - посимвольный проход по C-подобному исходнику. regexLit включается
-// только для JS/TS: в Go и Swift литералов регулярок нет, и эвристика их деления
-// на "/" только вредила бы.
-func scanC(src string, regexLit bool) []span {
+// cOpts - чем языки расходятся. Литералы регулярок есть только в JS и TS,
+// тройные кавычки в Kotlin и Java, вложенные блочные комментарии в Kotlin.
+type cOpts struct {
+	regexLit    bool
+	tripleQuote bool
+	nestedBlock bool
+}
+
+// scanC - посимвольный проход по C-подобному исходнику.
+func scanC(src string, o cOpts) []span {
 	var out []span
 	line, i, n := 1, 0, len(src)
 	prev := byte(0)
@@ -241,14 +251,31 @@ func scanC(src string, regexLit bool) []span {
 		case c == '/' && at(i+1) == '*':
 			start, so := line, i
 			i += 2
-			for i < n && (src[i] != '*' || at(i+1) != '/') {
+			depth := 1
+			for i < n && depth > 0 {
+				switch {
+				case src[i] == '\n':
+					line++
+				case o.nestedBlock && src[i] == '/' && at(i+1) == '*':
+					depth++
+					i++
+				case src[i] == '*' && at(i+1) == '/':
+					depth--
+					i++
+				}
+				i++
+			}
+			out = append(out, span{start, line, so, minInt(i, n), ownLine(src, so)})
+		case o.tripleQuote && c == '"' && at(i+1) == '"' && at(i+2) == '"':
+			i += 3
+			for i < n && (src[i] != '"' || at(i+1) != '"' || at(i+2) != '"') {
 				if src[i] == '\n' {
 					line++
 				}
 				i++
 			}
-			i += 2
-			out = append(out, span{start, line, so, minInt(i, n), ownLine(src, so)})
+			i += 3
+			prev = '"'
 		case c == '"' || c == '\'':
 			q := c
 			i++
@@ -289,7 +316,7 @@ func scanC(src string, regexLit bool) []span {
 				i++
 			}
 			prev = '`'
-		case regexLit && c == '/' && regexAllowed(prev):
+		case o.regexLit && c == '/' && regexAllowed(prev):
 			j, ok, inClass := i+1, false, false
 			for j < n && src[j] != '\n' {
 				if src[j] == '\\' {
@@ -346,7 +373,7 @@ func scanSvelte(src string) []span {
 	var out []span
 	for _, m := range svelteScriptRe.FindAllStringIndex(src, -1) {
 		base := strings.Count(src[:m[0]], "\n")
-		for _, s := range scanC(src[m[0]:m[1]], true) {
+		for _, s := range scanC(src[m[0]:m[1]], cOpts{regexLit: true}) {
 			out = append(out, span{s.start + base, s.end + base,
 				s.so + m[0], s.eo + m[0], ownLine(src, s.so+m[0])})
 		}
