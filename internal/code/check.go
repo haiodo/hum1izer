@@ -1,23 +1,26 @@
 package code
 
 import (
-	"github.com/haiodo/hum1izer/internal/humanize"
-
 	"fmt"
+	"go/parser"
+	"go/token"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/haiodo/hum1izer/internal/humanize"
 )
 
 // Finding - одна находка в комментарии или коммите, с абсолютным номером строки.
 type Finding struct {
-	File     string `json:"file"`
-	Category string `json:"category,omitempty"`
-	Line     int    `json:"line"`
-	Rule     string `json:"rule"`
-	Fix      string `json:"fix,omitempty"`
-	Sample   string `json:"sample,omitempty"`
-	Hard     bool   `json:"hard"`
+	File     string  `json:"file"`
+	Category string  `json:"category,omitempty"`
+	Line     int     `json:"line"`
+	Rule     string  `json:"rule"`
+	Fix      string  `json:"fix,omitempty"`
+	Sample   string  `json:"sample,omitempty"`
+	Lift     float64 `json:"lift,omitempty"`
+	Hard     bool    `json:"hard"`
 }
 
 // CodeSets - наборы правил для кода: язык выбирается по самому комментарию,
@@ -63,7 +66,8 @@ func ruleFindings(rs *humanize.RuleSet, c Comment, genre string) []Finding {
 			for _, ln := range h.Lines {
 				out = append(out, Finding{
 					File: c.File, Category: h.Category, Line: c.Start + ln - 1,
-					Rule: h.Marker, Fix: h.Fix, Hard: group.hard, Sample: excerpt(c.Text, ln),
+					Rule: h.Marker, Fix: h.Fix, Lift: h.Lift,
+					Hard: group.hard, Sample: excerpt(c.Text, ln),
 				})
 			}
 		}
@@ -118,9 +122,8 @@ func structChecks(maxLines int, c Comment) []Finding {
 			break
 		}
 	}
-	if n, share := codeLikeness(lines); n >= 2 && share >= 0.5 {
-		add(c.Start, "Закомментированный код", "Удали: история кода живёт в git, а не в комментарии",
-			fmt.Sprintf("%d из %d строк похожи на код", n, len(lines)))
+	if why := commentedOutCode(c.Lang, c.Text, lines); why != "" {
+		add(c.Start, "Закомментированный код", "Удали: история кода живёт в git, а не в комментарии", why)
 	}
 	if m := todoRe.FindStringIndex(c.Text); m != nil && !ownerRe.MatchString(c.Text) {
 		at := strings.Count(c.Text[:m[0]], "\n")
@@ -145,6 +148,48 @@ func structChecks(maxLines int, c Comment) []Finding {
 		add(c.Start, "Пересказ кода", "Комментарий повторяет имя ниже - удали или скажи почему, а не что", w)
 	}
 	return out
+}
+
+// proseMarkers: то, что встречается в живом комментарии и почти никогда в коде.
+// Без них "// TODO: if x == nil { ... }" уходит в закомментированный код.
+var proseMarkers = regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX|BUG|e\.g\.|i\.e\.|напр\.)\b|https?://`)
+
+// commentedOutCode. Для Go разбираем тело комментария настоящим парсером, как
+// это делает go-critic: эвристика по символам ошибается и в обе стороны.
+// Для остальных языков штатного парсера в стандартной библиотеке нет, поэтому
+// остаётся доля строк, похожих на код.
+// ponytail: потолок - TS/Swift/Svelte судятся регуляркой; апгрейд - парсер.
+func commentedOutCode(lang, text string, lines []string) string {
+	if len(strings.TrimSpace(text)) < 15 || proseMarkers.MatchString(text) {
+		return ""
+	}
+	n, share := codeLikeness(lines)
+	if n == 0 {
+		return ""
+	}
+	if lang == "go" {
+		if parsesAsGo(text) {
+			return fmt.Sprintf("разбирается как код: %d из %d строк", n, len(lines))
+		}
+		return ""
+	}
+	if n >= 2 && share >= 0.5 {
+		return fmt.Sprintf("%d из %d строк похожи на код", n, len(lines))
+	}
+	return ""
+}
+
+// parsesAsGo: тело комментария подставляется в функцию и отдаётся go/parser.
+// Разбор проходит - значит это код, а не проза.
+func parsesAsGo(text string) bool {
+	src := "package p\nfunc _() {\n" + text + "\n}\n"
+	_, err := parser.ParseFile(token.NewFileSet(), "", src, parser.SkipObjectResolution)
+	if err == nil {
+		return true
+	}
+	// Объявления верхнего уровня в тело функции не лезут, пробуем отдельно.
+	_, err = parser.ParseFile(token.NewFileSet(), "", "package p\n"+text+"\n", parser.SkipObjectResolution)
+	return err == nil
 }
 
 func codeLikeness(lines []string) (int, float64) {
@@ -301,12 +346,13 @@ type Item struct {
 }
 
 type ItemFinding struct {
-	Rule     string `json:"rule"`
-	Category string `json:"category,omitempty"`
-	Fix      string `json:"fix,omitempty"`
-	Line     int    `json:"line"`
-	Hard     bool   `json:"hard"`
-	Sample   string `json:"sample,omitempty"`
+	Rule     string  `json:"rule"`
+	Category string  `json:"category,omitempty"`
+	Fix      string  `json:"fix,omitempty"`
+	Line     int     `json:"line"`
+	Hard     bool    `json:"hard"`
+	Lift     float64 `json:"lift,omitempty"`
+	Sample   string  `json:"sample,omitempty"`
 }
 
 // NewItem собирает блок. Повторы одного правила на одной строке схлопываются:
@@ -326,15 +372,24 @@ func NewItem(c Comment, f []Finding) Item {
 		}
 		seen[key] = true
 		it.Findings = append(it.Findings, ItemFinding{
-			Rule: x.Rule, Category: x.Category, Fix: x.Fix,
+			Rule: x.Rule, Category: x.Category, Fix: x.Fix, Lift: x.Lift,
 			Line: x.Line, Hard: x.Hard, Sample: x.Sample})
-		if x.Hard {
-			it.Score += 3
-			continue
-		}
-		it.Score++
+		it.Score += weight(x)
 	}
 	return it
+}
+
+// weight: вклад находки в Score. lift - измеренное отношение частоты маркера у
+// машины к частоте у человека, у неизмеренных правил его нет и вес равен 1.
+func weight(f Finding) int {
+	w := 1
+	if f.Lift > 1 {
+		w = min(10, int(f.Lift+0.5))
+	}
+	if f.Hard {
+		w *= 3
+	}
+	return w
 }
 
 // SortItems: сначала самые грязные блоки, чтобы --limit брал их первыми.

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -136,36 +137,62 @@ func ExtractComments(path string) ([]Comment, error) {
 		spans = scanC(string(src), true)
 	}
 
-	lang := strings.TrimPrefix(filepath.Ext(path), ".")
+	text := string(src)
+	lang := config.LangOf(path)
 	out := make([]Comment, 0, len(spans))
 	for _, s := range merge(spans) {
-		raw := lines[s.start-1 : minInt(s.end, len(lines))]
+		raw := text[s.so:minInt(s.eo, len(text))]
+		rawLines := strings.Split(raw, "\n")
 		out = append(out, Comment{
 			File:  path,
 			Start: s.start,
 			End:   s.end,
-			Lines: len(raw),
-			Text:  stripMarkers(raw),
-			Raw:   strings.Join(raw, "\n"),
+			Lines: len(rawLines),
+			Text:  stripMarkers(rawLines),
+			Raw:   raw,
 			Lang:  lang,
-			Next:  nextCode(lines, s.end),
-			Doc:   isDoc(raw),
+			Next:  codeFor(text, lines, s),
+			Doc:   isDoc(rawLines),
 		})
 	}
 	return out, nil
 }
 
-type span struct{ start, end int }
+// span - комментарий в исходнике: строки для отчёта, байтовые смещения для
+// точного текста. Без смещений хвостовой комментарий утаскивал в блок код
+// перед "//", и такой блок разбирался парсером как код.
+type span struct {
+	start, end int // строки, с единицы
+	so, eo     int // смещения в байтах
+	ownLine    bool
+}
+
+// ownLine: перед комментарием на его строке нет ничего, кроме пробелов.
+func ownLine(src string, off int) bool {
+	for i := off - 1; i >= 0; i-- {
+		switch src[i] {
+		case '\n':
+			return true
+		case ' ', '\t', '\r':
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 func goSpans(path string, src []byte) ([]span, error) {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	f, err := parser.ParseFile(fset, path, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		return nil, err
 	}
 	var out []span
 	for _, cg := range f.Comments {
-		out = append(out, span{fset.Position(cg.Pos()).Line, fset.Position(cg.End()).Line})
+		for _, c := range cg.List {
+			b, e := fset.Position(c.Pos()), fset.Position(c.End())
+			out = append(out, span{b.Line, e.Line, b.Offset, e.Offset, ownLine(string(src), b.Offset)})
+		}
 	}
 	return out, nil
 }
@@ -190,13 +217,13 @@ func scanC(src string, regexLit bool) []span {
 			line++
 			i++
 		case c == '/' && at(i+1) == '/':
-			start := line
+			start, so := line, i
 			for i < n && src[i] != '\n' {
 				i++
 			}
-			out = append(out, span{start, line})
+			out = append(out, span{start, line, so, i, ownLine(src, so)})
 		case c == '/' && at(i+1) == '*':
-			start := line
+			start, so := line, i
 			i += 2
 			for i < n && (src[i] != '*' || at(i+1) != '/') {
 				if src[i] == '\n' {
@@ -205,7 +232,7 @@ func scanC(src string, regexLit bool) []span {
 				i++
 			}
 			i += 2
-			out = append(out, span{start, line})
+			out = append(out, span{start, line, so, minInt(i, n), ownLine(src, so)})
 		case c == '"' || c == '\'':
 			q := c
 			i++
@@ -304,35 +331,33 @@ func scanSvelte(src string) []span {
 	for _, m := range svelteScriptRe.FindAllStringIndex(src, -1) {
 		base := strings.Count(src[:m[0]], "\n")
 		for _, s := range scanC(src[m[0]:m[1]], true) {
-			out = append(out, span{s.start + base, s.end + base})
+			out = append(out, span{s.start + base, s.end + base,
+				s.so + m[0], s.eo + m[0], ownLine(src, s.so+m[0])})
 		}
 	}
 	for _, m := range htmlCommentRe.FindAllStringIndex(src, -1) {
 		start := strings.Count(src[:m[0]], "\n") + 1
-		out = append(out, span{start, start + strings.Count(src[m[0]:m[1]], "\n")})
+		out = append(out, span{start, start + strings.Count(src[m[0]:m[1]], "\n"),
+			m[0], m[1], ownLine(src, m[0])})
 	}
 	return out
 }
 
 // merge склеивает соседние комментарии в один блок: шапка из десяти // строк -
-// это один текст, а не десять находок.
+// это один текст, а не десять находок. Хвостовой комментарий не склеивается ни
+// с чем: между ним и соседом лежит код.
 func merge(spans []span) []span {
 	if len(spans) == 0 {
 		return nil
 	}
-	sorted := append([]span(nil), spans...)
-	for i := 1; i < len(sorted); i++ {
-		for j := i; j > 0 && sorted[j].start < sorted[j-1].start; j-- {
-			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
-		}
-	}
+	sorted := slices.Clone(spans)
+	slices.SortStableFunc(sorted, func(a, b span) int { return a.so - b.so })
 	out := []span{sorted[0]}
 	for _, s := range sorted[1:] {
 		last := &out[len(out)-1]
-		if s.start <= last.end+1 {
-			if s.end > last.end {
-				last.end = s.end
-			}
+		if s.ownLine && last.ownLine && s.start <= last.end+1 {
+			last.end = max(last.end, s.end)
+			last.eo = max(last.eo, s.eo)
 			continue
 		}
 		out = append(out, s)
@@ -359,6 +384,16 @@ func isDoc(lines []string) bool {
 	}
 	first := strings.TrimSpace(lines[0])
 	return strings.HasPrefix(first, "/**") || strings.HasPrefix(first, "///")
+}
+
+// codeFor - код, к которому относится комментарий. У хвостового это то, что
+// стоит перед ним на той же строке, у обычного - следующая строка кода.
+func codeFor(src string, lines []string, s span) string {
+	if s.ownLine {
+		return nextCode(lines, s.end)
+	}
+	start := strings.LastIndexByte(src[:s.so], '\n') + 1
+	return strings.TrimSpace(src[start:s.so])
 }
 
 func nextCode(lines []string, end int) string {

@@ -9,12 +9,13 @@ import (
 
 // Hit — попадание одного правила.
 type Hit struct {
-	Category  string `json:"category"`
-	Marker    string `json:"marker"`
-	Fix       string `json:"fix,omitempty"`
-	Count     int    `json:"count"`
-	Positions []int  `json:"-"`
-	Lines     []int  `json:"lines"`
+	Category  string  `json:"category"`
+	Marker    string  `json:"marker"`
+	Fix       string  `json:"fix,omitempty"`
+	Lift      float64 `json:"lift,omitempty"`
+	Count     int     `json:"count"`
+	Positions []int   `json:"-"`
+	Lines     []int   `json:"lines"`
 }
 
 // Rhythm — ритм предложений и типографика.
@@ -92,7 +93,7 @@ func ScanHardBans(rs *RuleSet, text string) []Hit {
 	for _, rule := range rs.HardBans {
 		if pos := rule.find(text); len(pos) > 0 {
 			hits = append(hits, Hit{Category: "HARD BAN", Marker: rule.Name,
-				Fix: rule.Fix, Count: len(pos), Positions: pos})
+				Fix: rule.Fix, Lift: rule.Lift, Count: len(pos), Positions: pos})
 		}
 	}
 	return hits
@@ -104,7 +105,7 @@ func ScanMarkers(rs *RuleSet, text string) []Hit {
 		for _, rule := range cat.Rules {
 			if pos := rule.find(text); len(pos) > 0 {
 				hits = append(hits, Hit{Category: cat.Name, Marker: rule.Name,
-					Fix: cat.Fix, Count: len(pos), Positions: pos})
+					Fix: cat.Fix, Lift: rule.Lift, Count: len(pos), Positions: pos})
 			}
 		}
 	}

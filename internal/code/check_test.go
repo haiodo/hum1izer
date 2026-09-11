@@ -170,3 +170,113 @@ func hasRule(f []Finding, rule string) bool {
 	}
 	return false
 }
+
+func TestWeightUsesLift(t *testing.T) {
+	cases := []struct {
+		f    Finding
+		want int
+	}{
+		{Finding{}, 1},
+		{Finding{Lift: 9.4}, 9},
+		{Finding{Lift: 1.2}, 1},
+		{Finding{Lift: 3.1, Hard: true}, 9},
+		{Finding{Hard: true}, 3},
+		{Finding{Lift: 99}, 10}, // потолок, чтобы одно правило не забирало весь список
+	}
+	for _, c := range cases {
+		if got := weight(c.f); got != c.want {
+			t.Errorf("lift=%v hard=%v: вес %d, ожидался %d", c.f.Lift, c.f.Hard, got, c.want)
+		}
+	}
+}
+
+func TestLiftReachesFinding(t *testing.T) {
+	cs := CodeSets{MaxLines: 2}
+	var err error
+	if cs.RU, err = humanize.LoadBuiltin("ru"); err != nil {
+		t.Fatal(err)
+	}
+	if cs.Code, err = humanize.LoadBuiltin("code"); err != nil {
+		t.Fatal(err)
+	}
+	cs.EN = cs.RU
+	f := CheckComment(cs, Comment{File: "a.go", Start: 1, Lines: 1,
+		Text: "Кэш играет ключевую роль"}, "code")
+	for _, x := range f {
+		if x.Rule == "Играет важную/ключевую роль" {
+			if x.Lift < 9 {
+				t.Errorf("lift не доехал до находки: %v", x.Lift)
+			}
+			return
+		}
+	}
+	t.Error("правило с замеренным lift не сработало")
+}
+
+func TestCommentedOutCodeGo(t *testing.T) {
+	cases := []struct {
+		name, text string
+		want       bool
+	}{
+		{"настоящий код", "if err != nil {\n\treturn err\n}", true},
+		{"объявление", "func old(a int) int {\n\treturn a * 2\n}", true},
+		{"проза со скобками", "счётчик сбрасывается, когда очередь пустеет (см. reset)", false},
+		{"TODO рядом с кодом", "TODO: вернуть return err после рефакторинга", false},
+		{"ссылка", "формат описан в https://example.com/spec, поле id = число", false},
+		{"короткий", "x := 1", false},
+	}
+	for _, c := range cases {
+		got := commentedOutCode("go", c.text, strings.Split(c.text, "\n")) != ""
+		if got != c.want {
+			t.Errorf("%s: %v, ожидалось %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestTrailingCommentIsSeparate(t *testing.T) {
+	src := "package a\n\n// шапка блока\nfunc f() {\n\tx := 1 // счётчик, а не размер\n\t_ = x\n}\n"
+	got := extract(t, "a.go", src)
+	if len(got) != 2 {
+		t.Fatalf("блоков: %d, ожидалось 2: %q", len(got), texts(got))
+	}
+	tail := got[1]
+	if strings.Contains(tail.Raw, "x := 1") {
+		t.Errorf("в raw хвостового комментария попал код: %q", tail.Raw)
+	}
+	if tail.Raw != "// счётчик, а не размер" {
+		t.Errorf("raw = %q", tail.Raw)
+	}
+	if tail.Text != "счётчик, а не размер" {
+		t.Errorf("text = %q", tail.Text)
+	}
+}
+
+func TestTrailingCommentSeesItsOwnLine(t *testing.T) {
+	src := "package a\n\nfunc f() {\n\tuserName := req.Name // get user name\n\t_ = userName\n}\n"
+	got := extract(t, "a.go", src)
+	if len(got) != 1 {
+		t.Fatalf("блоков: %d", len(got))
+	}
+	if got[0].Next != "userName := req.Name" {
+		t.Fatalf("next = %q", got[0].Next)
+	}
+	if restatesCode(got[0]) == "" {
+		t.Error("пересказ в хвостовом комментарии не пойман")
+	}
+}
+
+func TestTrailingCommentNotMergedWithNext(t *testing.T) {
+	src := "package a\n\nfunc f() {\n\tx := 1 // хвост\n\t// своя строка\n\t_ = x\n}\n"
+	got := extract(t, "a.go", src)
+	if len(got) != 2 {
+		t.Fatalf("хвостовой склеился со следующим: %q", texts(got))
+	}
+}
+
+func TestRawKeepsMarkers(t *testing.T) {
+	src := "package a\n\n// раз\n// два\nfunc f() {}\n"
+	got := extract(t, "a.go", src)
+	if len(got) != 1 || got[0].Raw != "// раз\n// два" {
+		t.Fatalf("raw = %q", got[0].Raw)
+	}
+}

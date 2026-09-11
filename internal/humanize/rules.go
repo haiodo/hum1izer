@@ -1,6 +1,7 @@
 package humanize
 
 import (
+	"cmp"
 	_ "embed"
 	"fmt"
 	"os"
@@ -57,17 +58,19 @@ type Thresholds struct {
 }
 
 type RuleSpec struct {
-	Name    string `yaml:"name"`
-	Fix     string `yaml:"fix"`
-	Lit     string `yaml:"lit"`
-	Re      string `yaml:"re"`
-	WordRe  string `yaml:"word_re"`
-	Builtin string `yaml:"builtin"`
+	Name    string  `yaml:"name"`
+	Fix     string  `yaml:"fix"`
+	Lift    float64 `yaml:"lift,omitempty"`
+	Lit     string  `yaml:"lit"`
+	Re      string  `yaml:"re"`
+	WordRe  string  `yaml:"word_re"`
+	Builtin string  `yaml:"builtin"`
 }
 
 type CategorySpec struct {
 	Name  string     `yaml:"name"`
 	Fix   string     `yaml:"fix"`
+	Lift  float64    `yaml:"lift,omitempty"`
 	Rules []RuleSpec `yaml:"rules"`
 }
 
@@ -91,6 +94,7 @@ type RuleFile struct {
 type Rule struct {
 	Name    string
 	Fix     string
+	Lift    float64
 	re      *regexp.Regexp
 	matcher func(string) []int
 }
@@ -109,6 +113,7 @@ func (r Rule) find(text string) []int {
 type Category struct {
 	Name  string
 	Fix   string
+	Lift  float64
 	Rules []Rule
 }
 
@@ -175,9 +180,10 @@ func parseRules(raw []byte) (*RuleSet, error) {
 		rs.HardBans = append(rs.HardBans, r)
 	}
 	for i, cat := range f.Categories {
-		c := Category{Name: cat.Name, Fix: cat.Fix}
+		c := Category{Name: cat.Name, Fix: cat.Fix, Lift: cat.Lift}
 		for j, spec := range cat.Rules {
 			r, err := compile(spec, cat.Fix)
+			r.Lift = cmp.Or(r.Lift, cat.Lift)
 			if err != nil {
 				return nil, fmt.Errorf("categories[%d].rules[%d] в %q: %w", i, j, cat.Name, err)
 			}
@@ -233,7 +239,7 @@ func (rs *RuleSet) validate() error {
 }
 
 func compile(spec RuleSpec, catFix string) (Rule, error) {
-	r := Rule{Name: spec.Name, Fix: spec.Fix}
+	r := Rule{Name: spec.Name, Fix: spec.Fix, Lift: spec.Lift}
 	if r.Fix == "" {
 		r.Fix = catFix
 	}
