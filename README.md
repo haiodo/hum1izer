@@ -19,10 +19,15 @@ CLI на Go: проверяет текст, комментарии в коде �
 платформу, распакуй, положи в `PATH`.
 
 ```bash
-go install github.com/haiodo/hum1izer/cmd/hum1izer@latest   # из исходников
-make build                                                  # локальная сборка
-make install                                                # в GOBIN
+go install github.com/haiodo/hum1izer@latest   # из исходников
+go run github.com/haiodo/hum1izer@latest --code ./src   # без установки
+make build                                     # локальная сборка
+make install                                   # в GOBIN
 ```
+
+Точка входа есть и в корне модуля, и в `cmd/hum1izer`, поэтому работают обе
+формы пути. `go.mod` требует Go 1.26, чтобы не тянуть тулчейн тем, кто сидит на
+предыдущей версии.
 
 Одна зависимость - `gopkg.in/yaml.v3` для чтения правил, остальное стандартная
 библиотека.

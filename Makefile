@@ -1,14 +1,14 @@
 BIN     := hum1izer
-PKG     := ./cmd/hum1izer
+PKG     := .
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X main.version=$(VERSION)
+LDFLAGS := -s -w -X github.com/haiodo/hum1izer/internal/cli.Version=$(VERSION)
 
 .PHONY: all build test fmt vet lint check install skills clean
 
 all: check build
 
 build:
-	go build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) $(PKG)
+	go build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) .
 
 test:
 	go test ./...
