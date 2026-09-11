@@ -39,6 +39,7 @@ const usage = `hum1izer - проверка текста, комментарие�
   --code        разбирать аргументы как исходники, а не как прозу
   --commits N   сколько последних коммитов проверить, 0 - не проверять (20)
   --max-lines N комментарий длиннее скольких строк - находка, 0 - не считать (2)
+  --max-line N  строка комментария длиннее скольких символов - находка (100)
   --skip-tests  пропускать _test.go, *.test.*, *.spec.*
 
 Настройки проекта:
@@ -87,6 +88,7 @@ func main() {
 	codeMode := flag.Bool("code", false, "разбирать аргументы как исходники")
 	commits := flag.Int("commits", 20, "сколько последних коммитов проверить")
 	maxLines := flag.Int("max-lines", 2, "комментарий длиннее скольких строк считать находкой, 0 - не считать")
+	maxLine := flag.Int("max-line", 100, "строка комментария длиннее скольких символов - находка, 0 - не считать")
 	skipTests := flag.Bool("skip-tests", false, "пропускать тестовые файлы")
 	basePath := flag.String("baseline", "", "файл снимка: ругаться только на новое")
 	writeBase := flag.Bool("write-baseline", false, "перезаписать снимок текущими находками")
@@ -121,6 +123,9 @@ func main() {
 	if !given["max-lines"] && cfg.Comments.MaxLines != nil {
 		*maxLines = *cfg.Comments.MaxLines
 	}
+	if !given["max-line"] && cfg.Comments.MaxLine != nil {
+		*maxLine = *cfg.Comments.MaxLine
+	}
 	if !given["commits"] && cfg.Comments.Commits != nil {
 		*commits = *cfg.Comments.Commits
 	}
@@ -130,9 +135,8 @@ func main() {
 	if !given["baseline"] && cfg.Baseline != "" {
 		*basePath = resolve(cfg, cfg.Baseline)
 	}
-	// Снимок коммитов бессмыслен: каждый новый коммит - новая находка, файл
-	// пришлось бы переписывать после каждого. Сообщения проверяются отдельным
-	// прогоном или хуком commit-msg.
+	// Снимок коммитов бессмыслен: каждый коммит - новая находка, файл пришлось бы
+	// переписывать после каждого. Сообщения проверяет отдельный прогон или хук commit-msg.
 	if *basePath != "" && !given["commits"] {
 		*commits = 0
 	}
@@ -145,7 +149,7 @@ func main() {
 	if *codeMode {
 		os.Exit(runCode(flag.Args(), codeOpts{
 			cfg: cfg, rules: *rulesPath, format: *format, top: *top, limit: *limit,
-			commits: *commits, maxLines: *maxLines, skipTests: *skipTests,
+			commits: *commits, maxLines: *maxLines, maxLine: *maxLine, skipTests: *skipTests,
 			baseline: *basePath, writeBaseline: *writeBase,
 		}))
 	}
@@ -209,7 +213,7 @@ type codeOpts struct {
 	rules, format       string
 	baseline            string
 	top, limit, commits int
-	maxLines            int
+	maxLines, maxLine   int
 	skipTests           bool
 	writeBaseline       bool
 }
@@ -238,7 +242,7 @@ func resolve(cfg config.Config, path string) string {
 // runCode: комментарии из исходников и, если в аргументе лежит git-репозиторий,
 // сообщения последних коммитов. И то и другое проверяется как обычная проза.
 func runCode(args []string, o codeOpts) int {
-	cs := code.CodeSets{MaxLines: o.maxLines}
+	cs := code.CodeSets{MaxLines: o.maxLines, MaxLineLen: o.maxLine}
 	excludes, err := o.cfg.Excludes()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "исключения: %v\n", err)
@@ -334,9 +338,8 @@ func runCode(args []string, o codeOpts) int {
 	return exit
 }
 
-// applyBaseline оставляет только те находки, которых нет в снимке. Код возврата
-// 1 ставится за новое, а не за жёсткое: на репозитории с тысячей находок
-// иначе не встроиться в CI.
+// applyBaseline оставляет только новые находки. Код возврата 1 - за новое, а не
+// за жёсткое: с тысячей существующих находок иначе не встроиться в CI.
 func applyBaseline(o codeOpts, items []code.Item) ([]code.Item, int, error) {
 	rel := relativeTo(o.baseline)
 	if o.writeBaseline {

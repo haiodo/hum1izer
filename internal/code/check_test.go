@@ -106,16 +106,34 @@ func TestStructChecks(t *testing.T) {
 		{"шаги", Comment{Lines: 2, Text: "- Step 1: validate\n- Step 2: persist"}, "Пошаговая инструкция"},
 	}
 	for _, c := range cases {
-		if !hasRule(structChecks(2, c.c), c.want) {
+		if !hasRule(structChecks(2, 0, c.c), c.want) {
 			t.Errorf("%s: правило %q не сработало", c.name, c.want)
 		}
 	}
 	// Описание операции в JSDoc - не ченджлог.
-	if hasRule(structChecks(12, Comment{Lines: 1, Text: "Update a top-level document by id"}), "Ченджлог в комментарии") {
+	if hasRule(structChecks(12, 0, Comment{Lines: 1, Text: "Update a top-level document by id"}), "Ченджлог в комментарии") {
 		t.Error("описание операции принято за ченджлог")
 	}
+	// Обычное слово "ToDo" - не маркер.
+	for _, text := range []string{
+		"Todos are resolved per batch and dropped with it",
+		"A helper class to control classic project todo automation",
+		"The separator between the todo list and the calendar",
+	} {
+		if hasRule(structChecks(12, 0, Comment{Lines: 1, Text: text}), "TODO без владельца") {
+			t.Errorf("обычное слово принято за маркер: %q", text)
+		}
+	}
+	// Маркер в кавычках - цитата, а не задача.
+	if hasRule(structChecks(12, 0, Comment{Lines: 1, Text: `пример: "// TODO: fix" уходит в код`}), "TODO без владельца") {
+		t.Error("маркер в кавычках принят за задачу")
+	}
+	// Строчный маркер со знаком после - настоящий.
+	if !hasRule(structChecks(12, 0, Comment{Lines: 1, Text: "todo: починить"}), "TODO без владельца") {
+		t.Error("строчный todo: не пойман")
+	}
 	// TODO со ссылкой на задачу - законный.
-	if hasRule(structChecks(2, Comment{Lines: 1, Text: "TODO(haiodo): починить"}), "TODO без владельца") {
+	if hasRule(structChecks(2, 0, Comment{Lines: 1, Text: "TODO(haiodo): починить"}), "TODO без владельца") {
 		t.Error("TODO с владельцем не должен считаться находкой")
 	}
 }
@@ -140,7 +158,7 @@ func TestCommitChecks(t *testing.T) {
 }
 
 func TestCheckCommentPicksLanguage(t *testing.T) {
-	cs := CodeSets{MaxLines: 2}
+	cs := CodeSets{MaxLines: 2, MaxLineLen: 100}
 	var err error
 	if cs.RU, err = humanize.LoadBuiltin("ru"); err != nil {
 		t.Fatal(err)
@@ -197,7 +215,7 @@ func TestWeightUsesLift(t *testing.T) {
 }
 
 func TestLiftReachesFinding(t *testing.T) {
-	cs := CodeSets{MaxLines: 2}
+	cs := CodeSets{MaxLines: 2, MaxLineLen: 100}
 	var err error
 	if cs.RU, err = humanize.LoadBuiltin("ru"); err != nil {
 		t.Fatal(err)
@@ -335,5 +353,29 @@ func TestWalkRespectsGitignore(t *testing.T) {
 	}
 	if strings.Contains(joined, "lib/a.js") {
 		t.Errorf("игнорируемый файл попал в обход: %v", got)
+	}
+}
+
+func TestPackageDocNotTooLong(t *testing.T) {
+	doc := Comment{Lines: 6, Text: "Package code разбирает комментарии.\n\nПодробности тут.",
+		Next: "package code"}
+	if hasRule(structChecks(2, 0, doc), "Длинный комментарий") {
+		t.Error("пакетная документация оштрафована за длину")
+	}
+	inline := doc
+	inline.Next = "func f() {"
+	if !hasRule(structChecks(2, 0, inline), "Длинный комментарий") {
+		t.Error("обычный длинный комментарий пропущен")
+	}
+}
+
+func TestLongCommentLine(t *testing.T) {
+	long := "// " + strings.Repeat("слово ", 30)
+	f := structChecks(2, 100, Comment{Lines: 1, Text: long})
+	if !hasRule(f, "Длинная строка комментария") {
+		t.Error("склеенная в одну длинную строку простыня не поймана")
+	}
+	if hasRule(structChecks(2, 100, Comment{Lines: 1, Text: "короткая строка"}), "Длинная строка комментария") {
+		t.Error("короткая строка принята за длинную")
 	}
 }

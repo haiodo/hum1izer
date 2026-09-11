@@ -2,10 +2,3 @@
 # Снимок находок. Прогон с --baseline ругается только на то, чего здесь нет.
 # Пересоздать: hum1izer --code --baseline <файл> --write-baseline <путь>
 # Формат: <хэш комментария>\t<правило>\t<файл>
-74754cb9860c	Длинный комментарий	cmd/hum1izer/main.go
-ff757f90b6a2	Длинный комментарий	cmd/hum1izer/main.go
-8a98c4f972eb	Длинный комментарий	eval/lift/main.go
-139ca4a5c4ff	Длинный комментарий	internal/baseline/baseline.go
-abdfee359ae6	TODO без владельца	internal/code/check.go
-c3dd03703874	Длинный комментарий	internal/code/check.go
-ddb612a0a551	Длинный комментарий	internal/code/check.go

@@ -106,8 +106,10 @@ func printReport(rs *humanize.RuleSet, src string, rep humanize.Report, top int)
 
 	r := rep.Rhythm
 	fmt.Println("РИТМ И ТИПОГРАФИКА:")
-	if r.CVLen < t.CVAIThreshold && r.Sentences >= 4 {
-		fmt.Printf("  ⚠ ровный ритм (CV=%.3f, цель ≥%.2f): чередуй длину предложений\n", r.CVLen, t.CVHumanTarget)
+	target := rs.CVTarget(rep.Genre)
+	if r.CVLen < target && r.Sentences >= 4 {
+		fmt.Printf("  ⚠ ровный ритм (CV=%.3f, цель ≥%.2f для жанра %s): чередуй длину предложений\n",
+			r.CVLen, target, rep.Genre)
 	} else {
 		fmt.Printf("  ✓ ритм рваный (CV=%.3f)\n", r.CVLen)
 	}

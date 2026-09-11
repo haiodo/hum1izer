@@ -18,6 +18,7 @@ const Name = ".hum1izer.yaml"
 
 type Comments struct {
 	MaxLines  *int  `yaml:"max_lines,omitempty"`
+	MaxLine   *int  `yaml:"max_line,omitempty"`
 	Commits   *int  `yaml:"commits,omitempty"`
 	SkipTests *bool `yaml:"skip_tests,omitempty"`
 }

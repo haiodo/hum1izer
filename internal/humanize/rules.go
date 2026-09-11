@@ -77,6 +77,9 @@ type CategorySpec struct {
 type GenreSpec struct {
 	MuteBans       []string `yaml:"mute_bans"`
 	MuteCategories []string `yaml:"mute_categories"`
+	// CVHumanTarget - свой порог рваности ритма для этого регистра. Технический
+	// текст ровнее разговорного, и один порог на всех наказывал документацию.
+	CVHumanTarget *float64 `yaml:"cv_human_target,omitempty"`
 }
 
 type RuleFile struct {
@@ -126,6 +129,15 @@ type RuleSet struct {
 	Genres            []string
 	mutedBans         map[string]map[string]bool
 	mutedCategories   map[string]map[string]bool
+	genreCV           map[string]float64
+}
+
+// CVTarget - порог рваности ритма для жанра, общий если своего нет.
+func (rs *RuleSet) CVTarget(genre string) float64 {
+	if v, ok := rs.genreCV[genre]; ok {
+		return v
+	}
+	return rs.Thresholds.CVHumanTarget
 }
 
 func (rs *RuleSet) HasGenre(name string) bool {
@@ -171,6 +183,7 @@ func parseRules(raw []byte) (*RuleSet, error) {
 		CopyPasteCategory: f.CopyPasteCategory,
 		mutedBans:         map[string]map[string]bool{},
 		mutedCategories:   map[string]map[string]bool{},
+		genreCV:           map[string]float64{},
 	}
 	for i, spec := range f.HardBans {
 		r, err := compile(spec, "")
@@ -195,6 +208,9 @@ func parseRules(raw []byte) (*RuleSet, error) {
 		rs.Genres = append(rs.Genres, name)
 		rs.mutedBans[name] = ToSet(g.MuteBans)
 		rs.mutedCategories[name] = ToSet(g.MuteCategories)
+		if g.CVHumanTarget != nil {
+			rs.genreCV[name] = *g.CVHumanTarget
+		}
 	}
 	sort.Strings(rs.Genres)
 	if err := rs.validate(); err != nil {

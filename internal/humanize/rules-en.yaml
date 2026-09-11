@@ -14,6 +14,18 @@
 # grounding for the numeric thresholds (AINL-Eval, LLMTrace, M4) is documented there:
 # humanizer-ru (MIT, (c) Ilya Utov): https://github.com/ilyautov/humanizer-ru
 
+# lift - во сколько раз маркер чаще у машины, чем у человека. Свой замер на
+# LLMTrace (iitolstykh/LLMTrace_detection, Apache-2.0): 2056 человеческих и 1352
+# машинных текста на английском, генераторы o3-2025, Magistral, command-r,
+# DeepSeek-R1, Falcon3, gpt-4.1. Пересчёт:
+#   go run ./eval/lift --file valid.jsonl --lang eng --set en
+#
+# Значение 10.0 означает, что у человека маркер не встретился ни разу.
+# Значение ниже единицы оставлено намеренно: это правило чаще срабатывает на
+# человеческом тексте, веса при сортировке оно не получает и признаком
+# генерации не является. Как совет по стилю такие правила остаются в наборе:
+# "in order to" всё равно стоит сокращать до "to", просто это не след машины.
+
 version: 1
 
 thresholds:
@@ -50,6 +62,7 @@ hard_bans:
     re: 'not\s+just[^.!?\n]{1,40}?\bbut\b'
   - name: "Isn't just X, it's Y"
     fix: 'State the claim directly; keep only Y.'
+    lift: 10.0
     re: 'isn.t\s+just[^.!?\n]{1,40}?it.s\b'
   - name: 'A testament to'
     fix: "Name the specific cause instead of calling it a 'testament'."
@@ -69,6 +82,7 @@ hard_bans:
     word_re: 'rich\s+tapestry'
   - name: 'Plays a crucial/vital/pivotal role'
     fix: 'Keep only the reason it matters, if the text gives one.'
+    lift: 10.0
     word_re: 'plays?\s+an?\s+(?:crucial|vital|pivotal|key|important)\s+role'
   - name: 'Serves as a'
     fix: "Say what it does, not what it 'serves as'."
@@ -80,6 +94,7 @@ hard_bans:
     re: '—'
   - name: 'En dash'
     fix: "Legitimate only in numeric ranges; use 'to' or a hyphen otherwise."
+    lift: 1.00  # ниже единицы: у человека чаще
     builtin: en_dash
   - name: 'I hope this helps / Let me know if you need'
     fix: 'Chat artifact: delete it entirely.'
@@ -92,6 +107,7 @@ hard_bans:
     re: 'certainly!|great\s+question!'
   - name: 'In a world where'
     fix: 'Cut the scene-setting opener; start with the actual subject.'
+    lift: 9.2
     word_re: 'in\s+a\s+world\s+where'
   - name: 'It goes without saying'
     fix: 'If it goes without saying, cut it.'
@@ -122,6 +138,51 @@ categories:
         word_re: 'game.changer'
       - lit: world-class
       - lit: next-generation
+
+  # Список из blader/humanizer (MIT), который в свою очередь опирается на
+  # Wikipedia "Signs of AI writing". Веса проставлены своим замером на LLMTrace;
+  # у правил без lift замер ничего не показал.
+  - name: 'Overused AI words'
+    fix: 'Model vocabulary. Use the plain word or name the specific thing.'
+    lift: 27.6
+    rules:
+      - lit: bolstered
+      - lit: garner
+      - lit: interplay
+      - name: intricate / intricacies
+        word_re: 'intricat(?:e|ely|ies)'
+      - name: meticulous(ly)
+        word_re: 'meticulous(?:ly)?'
+      - lit: pivotal
+      - lit: showcase
+      - name: underscore (verb)
+        word_re: 'underscor(?:e|es|ed|ing)'
+      - lit: vibrant
+      - lit: enduring
+      - name: fostering
+        word_re: 'foster(?:s|ed|ing)'
+      - lit: deep dive
+      - name: align with
+        word_re: 'align(?:s|ed|ing)? with'
+
+  # Хеджи сами по себе человеческая привычка; тель - когда их два и больше в
+  # одном предложении. Отдельного правила на "стопку" в RE2 не выразить, поэтому
+  # ловим характерные сцепки.
+  - name: 'Stacked qualifiers'
+    fix: 'One qualifier at most. Say what the source actually supports.'
+    rules:
+      - name: could potentially
+        word_re: 'could\s+potentially'
+      - name: might arguably
+        word_re: 'might\s+arguably'
+      - name: it could be argued that
+        word_re: 'it\s+could\s+be\s+argued'
+      - name: in some cases it may
+        word_re: 'in\s+some\s+cases\s+it\s+ma[yi]'
+      - name: to be fair
+        word_re: 'to\s+be\s+fair'
+      - name: it is also possible that
+        word_re: 'it(?:\x27s| is)\s+also\s+possible'
 
   - name: 'Latinate verbs'
     fix: 'Use the plain verb: use, ease, simplify, run, push, come up with.'
@@ -171,6 +232,7 @@ categories:
 
   - name: 'Tutorial voice'
     fix: 'Drop the classroom narration; show the result, not the walk-through.'
+    lift: 0.79  # ниже единицы: у человека чаще
     rules:
       - name: "let's"
         word_re: 'let.s'
@@ -182,6 +244,7 @@ categories:
 
   - name: 'Chatbot artifacts'
     fix: 'Chat artifact: delete it entirely.'
+    lift: 0.30  # ниже единицы: у человека чаще
     rules:
       - lit: as an ai
       - name: "i cannot / i don't have access to"
@@ -239,6 +302,7 @@ categories:
 
   - name: 'Symbol substitution / typography'
     fix: 'Character substitution: restore plain ASCII punctuation.'
+    lift: 0.94  # ниже единицы: у человека чаще
     rules:
       - name: en dash
         builtin: en_dash
@@ -267,6 +331,7 @@ categories:
 
   - name: 'Bureaucratic nouns'
     fix: 'Unpack the nominalization into a verb: "implementation of X" -> "implement X"'
+    lift: 0.31  # ниже единицы: у человека чаще
     rules:
       - lit: utilization
       - lit: implementation of
@@ -279,6 +344,451 @@ categories:
       - lit: subsequent to
 
 # Category whose hits mean the text was pasted straight out of a chatbot UI.
+
+  # ---------------------------------------------------------------------------
+  # Перенесено из lynote-ai/humanize-text-skill (MIT), который сам агрегирует
+  # avoid-ai-writing и shuorenhua (оба MIT). 207 правил, все проверены на
+  # компиляцию под RE2. Веса lift проставлены своим замером на LLMTrace;
+  # правила без lift замер не разделил или данных не хватило.
+  # ---------------------------------------------------------------------------
+
+  - name: 'Throat clearing'
+    fix: 'Cut the throat-clearing opener; start with the actual point.'
+    rules:
+      - lit: "here's the thing"
+      - lit: 'the uncomfortable truth is'
+      - lit: 'can we talk about'
+      - lit: "i'll be frank"
+      - lit: 'at its core'
+      - name: "in today's world"
+        word_re: 'in\s+today.s\s+world'
+      - lit: 'what this means is'
+      - name: 'in an era where'
+        word_re: 'in\s+an\s+era\s+where'
+
+  - name: 'Emphasis crutches'
+    fix: 'Cut the standalone emphasis line; let the claim carry its own weight.'
+    lift: 2.2
+    rules:
+      - lit: 'full stop.'
+      - lit: 'let that sink in'
+      - lit: 'make no mistake'
+      - lit: 'mark my words'
+      - lit: 'i promise'
+      - lit: 'read that again'
+      - lit: 'period.'
+
+  - name: 'Business jargon'
+    fix: 'Use the plain verb instead of the corporate jargon term.'
+    lift: 3.7
+    rules:
+      - name: 'unpack(ing)'
+        word_re: 'unpack(?:ing)?'
+      - lit: 'thought leader'
+      - lit: 'best practices'
+      - name: 'embark(s/ing/ed)'
+        word_re: 'embark(?:s|ing|ed)?'
+      - name: 'commence(s/ing/ed)'
+        word_re: 'commenc(?:e|es|ing|ed)'
+      - name: 'ascertain(s/ing/ed)'
+        word_re: 'ascertain(?:s|ing|ed)?'
+      - name: 'endeavor(s/ing/ed)'
+        word_re: 'endeavou?r(?:s|ing|ed)?'
+      - name: 'dive into'
+        word_re: 'dive\s+into'
+      - lit: 'circle back'
+      - lit: 'lean into'
+      - name: 'navigate/navigating'
+        lit: 'navigat'
+      - lit: 'ameliorate'
+
+  - name: 'Copula inflation'
+    fix: 'Say what it does or is; drop the copula-avoidance phrase.'
+    lift: 4.4
+    rules:
+      - name: 'boasts a/an'
+        word_re: 'boasts?\s+an?'
+      - name: 'stands as a/an'
+        word_re: 'stands?\s+as\s+an?'
+      - name: 'represents a/an'
+        word_re: 'represents?\s+an?'
+      - name: 'functions as a/an'
+        word_re: 'functions?\s+as\s+an?'
+      - name: 'features a/an'
+        word_re: 'features?\s+an?'
+      - name: 'presents a/an'
+        word_re: 'presents?\s+an?'
+
+  - name: 'Filler phrases'
+    fix: 'Cut the filler phrase or replace it with the plain form.'
+    lift: 1.3
+    rules:
+      - name: 'has/have the ability to'
+        word_re: 'has\s+the\s+ability\s+to|have\s+the\s+ability\s+to'
+      - lit: 'at this point in time'
+      - lit: 'in terms of'
+      - lit: 'the reality is that'
+      - lit: 'when it comes to'
+      - name: 'that said'
+        word_re: 'that\s+said'
+      - name: "it's important to note (that)"
+        word_re: 'it.s\s+important\s+to\s+note(?:\s+that)?'
+      - lit: 'to summarize'
+      - lit: 'all in all'
+
+  - name: 'Tier 1 vocabulary'
+    fix: 'Replace with the plain word; this is one of the most over-used AI tells.'
+    lift: 7.2
+    rules:
+      - lit: 'tapestry'
+      - lit: 'beacon'
+      - lit: 'nestled'
+      - lit: 'thriving'
+      - lit: 'bustling'
+      - lit: 'ever-evolving'
+      - lit: 'daunting'
+      - lit: 'actionable'
+      - lit: 'impactful'
+      - lit: 'learnings'
+      - lit: 'symphony'
+      - lit: 'realm'
+      - lit: 'complexities'
+      - name: 'game-changing'
+        word_re: 'game.changing'
+
+  - name: 'Tier 2 vocabulary'
+    fix: 'Replace with the plain word; flag only matters when several cluster together.'
+    lift: 5.2
+    rules:
+      - lit: 'harness'
+      - lit: 'elevat'
+      - lit: 'unleash'
+      - lit: 'resonat'
+      - lit: 'underpin'
+      - lit: 'nuanced'
+      - lit: 'multifaceted'
+      - lit: 'ecosystem'
+      - lit: 'myriad'
+      - lit: 'plethora'
+      - lit: 'encompass'
+      - lit: 'catalyz'
+      - lit: 'reimagin'
+      - lit: 'galvaniz'
+      - lit: 'augment'
+      - lit: 'cultivat'
+      - lit: 'illuminat'
+      - lit: 'elucidat'
+      - lit: 'juxtapos'
+      - lit: 'transformative'
+      - lit: 'transformation'
+      - lit: 'cornerstone'
+      - lit: 'paramount'
+      - lit: 'poised'
+      - lit: 'burgeoning'
+      - lit: 'nascent'
+      - lit: 'quintessential'
+      - lit: 'overarching'
+      - name: 'paradigm-shifting'
+        word_re: 'paradigm.shifting'
+      - lit: 'bolster'
+      - lit: 'spearhead'
+
+  - name: 'Tier 3 vocabulary'
+    fix: 'Replace with a plainer word; only a problem at high density.'
+    lift: 5.9
+    rules:
+      - lit: 'significant'
+      - lit: 'innovat'
+      - lit: 'effective'
+      - lit: 'dynamic'
+      - lit: 'scalab'
+      - lit: 'compelling'
+      - lit: 'unprecedented'
+      - lit: 'exceptional'
+      - lit: 'remarkable'
+      - lit: 'sophisticated'
+      - lit: 'instrumental'
+      - name: 'emerging sector/space/category/industry'
+        word_re: 'emerging\s+(?:sector|space|category|industry)'
+      - name: 'the integration of'
+        word_re: 'the\s+integration\s+of'
+      - name: 'the intersection of'
+        word_re: 'the\s+intersection\s+of'
+      - name: 'community-driven'
+        word_re: 'community.driven'
+      - name: 'long-term sustainability'
+        word_re: 'long.term\s+sustainability'
+      - name: 'user engagement'
+        word_re: 'user\s+engagement'
+      - name: 'decentralized compute'
+        word_re: 'decentralized\s+compute'
+      - name: '(sustainable) reward emissions'
+        word_re: '(?:sustainable\s+)?reward\s+emissions?'
+      - name: 'tokenized incentive structure(s)'
+        word_re: 'tokenized\s+incentive\s+structures?'
+      - name: 'designed for long-term'
+        word_re: 'designed\s+for\s+long.term'
+      - name: 'real/actual/genuine/true tokenomics-style noun'
+        word_re: '(?:real|actual|genuine|true)\s+(?:on.chain\s+)?(?:tokenomics|economics|utility|adoption|sustainability|impact|revenue|fundamentals|demand|value|innovation|traction)'
+
+  - name: 'Significance inflation'
+    fix: 'Name the actual outcome instead of calling it a moment/mark.'
+    lift: 42.1
+    rules:
+      - lit: 'watershed moment'
+      - name: 'marking a pivotal/significant/important moment'
+        word_re: 'marking\s+a\s+(?:pivotal|significant|important)\s+moment'
+      - name: 'in the evolution of'
+        word_re: 'in\s+the\s+evolution\s+of'
+      - name: 'a pivotal/defining moment in'
+        word_re: 'a\s+(?:pivotal|defining)\s+moment\s+in'
+      - lit: 'groundbreaking'
+      - lit: 'indelible mark'
+
+  - name: 'Generic conclusions'
+    fix: 'Cut the generic closing line or replace with a real conclusion.'
+    rules:
+      - lit: 'the future looks bright'
+      - lit: 'only time will tell'
+      - lit: 'one thing is certain'
+      - lit: 'as we move forward'
+
+  - name: 'Reasoning chain artifacts'
+    fix: 'Cut the exposed reasoning-chain narration.'
+    rules:
+      - lit: 'let me think step by step'
+      - lit: 'breaking this down'
+      - lit: 'to approach this systematically'
+      - name: "here's my thought process"
+        word_re: 'here.s\s+my\s+thought\s+process'
+      - name: "first, let's consider"
+        word_re: 'first,?\s+let.s\s+consider'
+      - lit: 'working through this logically'
+
+  - name: 'Acknowledgment loops'
+    fix: 'Drop the question-restating preamble; answer directly.'
+    rules:
+      - name: "you're asking about"
+        word_re: 'you.re\s+asking\s+about'
+      - lit: 'the question of whether'
+      - lit: 'to answer your question'
+
+  - name: 'Vague attribution'
+    fix: 'Name the actual expert or study instead of a vague group.'
+    lift: 2.7
+    rules:
+      - name: 'experts believe/say/suggest/agree'
+        word_re: 'experts?\s+(?:believe|say|suggest|agree)'
+      - name: 'studies show/suggest/indicate'
+        word_re: 'studies\s+(?:show|suggest|indicate)'
+      - name: 'research shows/suggests/indicates'
+        word_re: 'research\s+(?:shows|suggests|indicates)'
+      - name: 'industry leaders agree/believe/say'
+        word_re: 'industry\s+leaders\s+(?:agree|believe|say)'
+
+  - name: 'Hollow intensifiers'
+    fix: 'Cut the intensifier; it adds no information.'
+    lift: 5.0
+    rules:
+      - lit: 'genuinely'
+      - lit: 'quite frankly'
+      - lit: 'to be honest'
+
+  - name: 'Emotional flatline'
+    fix: 'Cut the canned reaction; show the actual reaction or nothing.'
+    rules:
+      - lit: 'what surprised me most'
+      - lit: 'i was fascinated to'
+      - lit: 'what struck me was'
+      - lit: 'i was excited to learn'
+      - name: 'the most interesting part/thing/aspect/piece'
+        word_re: 'the\s+most\s+interesting\s+(?:part|thing|aspect|piece)'
+      - name: 'interesting part/thing: (line opener)'
+        re: '(?m)^\s*interesting\s+(?:part|thing|aspect|piece)(?:\s+of\s+(?:the\s+)?\w+)?\s*:'
+
+  - name: 'Novelty inflation'
+    fix: 'Name the actual insight instead of claiming nobody said it.'
+    rules:
+      - name: "the failure mode nobody's naming"
+        word_re: 'the\s+failure\s+mode\s+nobody.s?\s+naming'
+      - lit: 'a problem nobody talks about'
+      - name: "the insight everyone's missing"
+        word_re: 'the\s+insight\s+everyone.s?\s+missing'
+      - lit: 'what nobody tells you'
+
+  - name: 'Cutoff disclaimers'
+    fix: 'Chat/model artifact: delete it entirely.'
+    rules:
+      - lit: 'as of my last update'
+      - name: 'as of my (knowledge) cutoff/last training'
+        word_re: 'as\s+of\s+my\s+(?:knowledge\s+)?(?:cut.?off|last\s+training)'
+      - lit: 'based on available information'
+      - name: 'as an ai/artificial intelligence/large language model'
+        word_re: 'as\s+an?\s+(?:ai|artificial\s+intelligence|large\s+language|ai\s+language)\s+(?:language\s+)?model'
+      - name: "i am/i'm an ai assistant"
+        word_re: 'i(?:.m|\s+am)\s+an?\s+(?:ai|artificial\s+intelligence|large\s+language)\s+(?:assistant|model)?'
+      - name: 'my training data goes up to/ends'
+        word_re: 'my\s+training\s+data\s+(?:only\s+)?(?:goes\s+up\s+to|extends\s+to|ends\s+(?:in|at))'
+
+  - name: 'Template phrases'
+    fix: 'Cut the templated phrase; write the specific point.'
+    rules:
+      - name: 'a X step towards/forward for'
+        word_re: 'a\s+\w+\s+step\s+(?:towards?|forward\s+for)'
+      - name: "whether you're X or Y"
+        word_re: 'whether\s+you.re\s+\w+\s+or\s+\w+'
+      - lit: 'i recently had the pleasure of'
+
+  - name: 'False concession'
+    fix: 'Drop the token concession; state the actual tradeoff.'
+    rules:
+      - name: 'while X is impressive'
+        word_re: 'while\s+\w+\s+is\s+impressive'
+      - name: 'although X has made strides'
+        word_re: 'although\s+\w+\s+has\s+made\s+strides'
+      - name: 'despite X challenge(s)'
+        word_re: 'despite\s+\w+\s+challenges?'
+
+  - name: 'Rhetorical questions'
+    fix: 'Cut the rhetorical question; state the point directly.'
+    rules:
+      - lit: 'but what does this mean for'
+      - lit: 'so why should you care'
+      - name: "what's next?"
+        word_re: 'what.s\s+next\?'
+
+  - name: 'Hedge stacking'
+    fix: 'One hedge word at most; drop the rest.'
+    rules:
+      - name: 'could/may/might ... potentially/eventually/ultimately/possibly/conceivably'
+        word_re: '(?:could|may|might)(?:\s+\w+){0,2}\s+(?:potentially|eventually|ultimately|possibly|conceivably)'
+      - name: 'potentially/eventually/ultimately could/may/might'
+        word_re: '(?:potentially|eventually|ultimately)\s+(?:could|may|might)'
+
+  - name: 'Future narrative'
+    fix: 'Name the actual prediction instead of the vague narrative claim.'
+    rules:
+      - name: 'may/could/will/poised to become one of the most X narratives'
+        word_re: '(?:may|could|will|is\s+(?:poised|set)\s+to)\s+become\s+(?:one\s+of\s+)?(?:the\s+)?(?:most\s+)?\w+\s+(?:narratives?|stories|developments?|trends?|movements?|chapters?|themes?|forces?)'
+      - name: 'one of the most important narratives of the next/coming X'
+        word_re: 'one\s+of\s+the\s+most\s+important\s+(?:narratives?|stories|trends?|themes?)\s+of\s+the\s+(?:next|coming)\s+\w+'
+
+  - name: 'Formulaic openers'
+    fix: 'Cut the scene-setting opener; start with the subject.'
+    rules:
+      - name: 'in the (rapidly/ever-)evolving world/landscape/... of'
+        word_re: 'in\s+the\s+(?:rapidly\s+|ever.)?(?:evolving|changing|expanding|growing|shifting)\s+(?:world|landscape|realm|space|field|domain|era)\s+of'
+      - name: 'in a/the (digital) age where/of'
+        word_re: 'in\s+(?:an?|the)\s+(?:digital\s+)?age\s+(?:where|of)'
+      - name: 'as we/the world/society/industries continue/move/navigate/enter to evolve/forward'
+        word_re: 'as\s+(?:we|the\s+world|society|industries?)\s+(?:continue|move|navigate|enter)\s+(?:to\s+)?(?:evolve|forward|into|through)'
+      - name: 'has emerged as a/the/one of leading/key/... X'
+        word_re: 'has\s+emerged\s+as\s+(?:an?|the|one\s+of)\s+(?:leading|key|major|critical|essential|fundamental|pivotal|prominent|dominant)\s+\w+'
+      - name: 'has become increasingly important/critical/popular/relevant/prominent/essential'
+        word_re: 'has\s+become\s+increasingly\s+(?:important|critical|popular|relevant|prominent|essential)'
+
+  - name: 'Parenthetical hedging'
+    fix: 'Cut the parenthetical hedge or fold it into the sentence.'
+    rules:
+      - name: '(and increasingly/notably/importantly/crucially/interestingly/perhaps, ...)'
+        re: '\(\s*(?:and\s+)?(?:increasingly|notably|importantly|crucially|interestingly|perhaps)[,]?\s+[^)]{3,60}\)'
+      - name: '(or more precisely/accurately/specifically, ...)'
+        re: '\(\s*or\s+more\s+(?:precisely|accurately|specifically)[,]?\s+[^)]{3,60}\)'
+      - name: '(though to be fair, ...)'
+        re: '\(\s*though\s+to\s+be\s+fair[,]?\s+[^)]{3,60}\)'
+      - name: '(at least in theory/principle/part, ...)'
+        re: '\(\s*at\s+least\s+(?:in\s+)?(?:theory|principle|part)[,]?\s+[^)]{0,60}\)'
+
+  - name: 'Confidence calibration'
+    fix: 'Cut the confidence-calibration adverb.'
+    lift: 1.6
+    rules:
+      - lit: 'interestingly'
+      - lit: 'surprisingly'
+      - lit: 'importantly'
+      - lit: 'certainly'
+      - name: 'without a doubt'
+        word_re: 'without\s+a\s+doubt'
+
+  - name: 'Social CTA closers'
+    fix: 'Cut the social-media call-to-action closer.'
+    rules:
+      - name: "this one's worth your time/the read/..."
+        word_re: 'this\s+one.?s\s+(?:is\s+)?(?:well\s+|totally\s+|absolutely\s+|definitely\s+|really\s+|truly\s+|easily\s+|more\s+than\s+)?worth\s+(?:your\s+time|the\s+read|a\s+read|every\s+(?:minute|second)|reading|watching|a\s+listen|a\s+watch|a\s+look|it)'
+      - name: "this one's a must-read/watch/listen/see"
+        word_re: 'this\s+one.?s\s+(?:is\s+)?a\s+must.(?:read|watch|listen|see)'
+      - name: 'highly/strongly recommend giving this a read/watch/...'
+        word_re: '(?:highly|strongly|can.t|cannot)\s+recommend\w*\s+(?:giving\s+)?(?:this|it)\s+(?:one\s+)?a\s+(?:read|listen|watch|look|go)'
+      - name: 'do yourself a favor and read/watch/check out this'
+        word_re: 'do\s+yourself\s+a\s+favou?r\s+and\s+(?:read|watch|check\s+out)\s+(?:this|it)'
+      - name: "you won't want to miss this"
+        word_re: 'you\s+(?:really\s+)?(?:won.t|don.t|will\s+not|do\s+not)\s+want\s+to\s+miss\s+this(?:\s+one)?'
+      - name: 'thank me later'
+        word_re: '(?:you\s+can\s+)?thank\s+me\s+later'
+      - name: 'save this (one) for later'
+        word_re: 'save\s+this(?:\s+one)?\s+for\s+later'
+      - name: 'bookmark this'
+        word_re: 'bookmark\s+this(?:\s+(?:one|post|thread))?'
+      - name: "don't sleep on this"
+        word_re: 'don.t\s+sleep\s+on\s+this'
+      - name: 'trust me, on this/you will'
+        word_re: 'trust\s+me,?\s+(?:on\s+this|you.ll)'
+
+  - name: 'False binary / value inflation'
+    fix: 'State the claim directly; drop the false-binary frame.'
+    rules:
+      - name: "it's/it is not X, it's/it is Y"
+        word_re: 'it(?:.s|\s+is)\s+not\s+(?:about|just)?\s*[\w\s]{1,30},?\s+it(?:.s|\s+is)\s+(?:about\s+)?[\w\s]{1,30}'
+      - name: "it's not just X, it's Y"
+        word_re: 'it.s\s+not\s+just\s+[\w\s]{1,25},?\s+it.s\s+[\w\s]{1,35}'
+      - name: "more than just a X, it's a Y"
+        word_re: 'more\s+than\s+just\s+a\s+[\w\s]{1,25},?\s+it.s\s+a\s+[\w\s]{1,35}'
+
+  - name: 'Mechanical ordering'
+    fix: 'Vary the ordering language; first/second/finally reads templated.'
+    rules:
+      - name: 'first ... second ... finally/lastly'
+        word_re: 'first,?\s+[^.;]{2,50}[;.]\s*[^.;]*second,?\s+[^.;]{2,50}[;.]\s*[^.;]*(?:finally|lastly),?'
+      - name: 'first ... then ... finally'
+        word_re: 'first,?\s+[^.;]{2,50}[;.]\s*[^.;]*then,?\s+[^.;]{2,50}[;.]\s*[^.;]*finally,?'
+
+  - name: 'Symmetry padding'
+    fix: 'Cut the doubled both-and padding; say it once.'
+    rules:
+      - name: 'both X and Y, while also both X and Y'
+        word_re: 'both\s+[\w\s]{1,25}\s+and\s+[\w\s]{1,25},?\s+(?:while|whilst|and)\s+(?:also\s+)?(?:both\s+)?[\w\s]{1,25}\s+and\s+[\w\s]{1,25}'
+
+  - name: 'Copy-paste fingerprints'
+    fix: 'Copy-paste artifact from a chat tool: remove or fill in before publishing.'
+    lift: 9.2
+    rules:
+      - name: 'Unfilled placeholder [Your/Insert/Add/Enter/Describe/Specify/Choose/Pick ...]'
+        re: '\[(?:Your|Insert|Add|Enter|Describe|Specify|Choose|Pick)[^\]\n]{1,80}\]'
+      - name: 'Unfilled placeholder [Recipient/Sender/Topic/.../Date]'
+        re: '\[(?:Recipient|Sender|Topic|Subject|Salutation|Closing|Position|Department|Project Name|Company Name|Date)(?:\s+[^\]\n]{0,60})?\]'
+      - name: 'Unfilled placeholder [INSERT/FILL IN/ADD/TODO/TBD/PLACEHOLDER ...]'
+        re: '\[(?:INSERT|FILL\s+IN|ADD|TODO|TBD|PLACEHOLDER)[^\]\n]{0,80}\]'
+      - name: 'Placeholder date YYYY-XX-XX'
+        re: '\b(?:19|20)\d{2}-XX-XX\b'
+      - name: 'Placeholder date XX/XX/YYYY'
+        re: '\bXX/XX/(?:19|20)\d{2}\b'
+      - name: 'Placeholder HTML/MD comment (add/fill in/insert/todo/placeholder)'
+        re: '<!--\s*(?:add|fill\s+in|insert|todo|placeholder)[^>]{0,120}-->'
+      - name: 'Chat citation marker citeturn/citenews/...'
+        re: '\bcite(?:turn|news|search|navigation)\d+(?:search|turn|news|navigation)\d+'
+      - name: 'contentReference oaicite leak'
+        re: 'contentReference\s*\[oaicite:[^\]]+\]\s*\{[^}]*\}'
+      - name: 'oai_citation leak'
+        re: '\boai_citation\b'
+      - name: 'attached_file marker'
+        re: '\[attached_file:\d+\]'
+      - name: 'grok_card marker'
+        re: '\bgrok_card\b'
+      - name: 'utm_source=chatgpt/openai/copilot/claude/grok/gemini/perplexity'
+        re: '[?&]utm_source=(?:chatgpt|openai|copilot|claude|grok|gemini|perplexity)(?:\.com|\.ai)?\b'
+      - name: 'referrer=chatgpt/copilot/grok/claude/gemini/perplexity'
+        re: '[?&]referrer=(?:chatgpt|copilot|grok|claude|gemini|perplexity)\.(?:com|ai)\b'
+
 copy_paste_category: 'Chatbot artifacts'
 
 # Genre filter: some bans are normal register in a given genre, not a machine tell.
@@ -288,6 +798,8 @@ genres:
     mute_bans: []
     mute_categories: []
   academic:
+    # научный текст ровнее разговорного: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.35
     mute_bans:
       - 'Em dash'
       - 'En dash'
@@ -299,6 +811,8 @@ genres:
       - 'Hedging'
       - 'Weasel passives'
   legal:
+    # юридический ещё ровнее: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.35
     mute_bans:
       - 'Serves as a'
       - 'Em dash'
@@ -307,6 +821,8 @@ genres:
       - 'Bureaucratic nouns'
       - 'Overused transitions'
   fiction:
+    # проза рваная по природе: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.55
     mute_bans:
       - 'Em dash'
       - 'En dash'
@@ -315,6 +831,8 @@ genres:
     mute_categories:
       - 'Not only ... but also'
   news:
+    # новость - деловой регистр: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.40
     mute_bans:
       - 'Serves as a'
       - 'Em dash'
@@ -322,13 +840,27 @@ genres:
     mute_categories:
       - 'Bureaucratic nouns'
   code:
+    # комментарий короткий и ровный: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.35
     mute_bans:
       - 'Em dash'
       - 'En dash'
     mute_categories:
       - 'Hollow significance'
       - 'Symbol substitution / typography'
+      # В коде это термины, а не штампы: navigate - метод роутера.
+      - 'Tier 3 vocabulary'
+      - 'Business jargon'
+      - 'Rhetorical questions'
+      - 'Social CTA closers'
   commit:
+    # сообщение коммита тем более: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.35
     mute_bans: []
     mute_categories:
       - 'Bureaucratic nouns'
+      # В коде это термины, а не штампы: navigate - метод роутера.
+      - 'Tier 3 vocabulary'
+      - 'Business jargon'
+      - 'Rhetorical questions'
+      - 'Social CTA closers'

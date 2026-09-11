@@ -29,6 +29,7 @@ type Finding struct {
 type CodeSets struct {
 	RU, EN, Code *humanize.RuleSet
 	MaxLines     int
+	MaxLineLen   int
 }
 
 // CheckComment: правила по языку + общие правила комментариев + структурные
@@ -51,7 +52,7 @@ func CheckComment(cs CodeSets, c Comment, genre string) []Finding {
 	if genre == "commit" {
 		return append(out, commitChecks(c)...)
 	}
-	return append(out, structChecks(cs.MaxLines, c)...)
+	return append(out, structChecks(cs.MaxLines, cs.MaxLineLen, c)...)
 }
 
 var (
@@ -60,9 +61,8 @@ var (
 		`all rights reserved|под лицензией`)
 )
 
-// isLicenseHeader: шапку с лицензией никто не редактирует, и проверять её
-// незачем. SPDX считается признаком где угодно, остальное - только в начале
-// файла, чтобы не глушить разбор слова "лицензия" в обычном комментарии.
+// isLicenseHeader: SPDX - признак лицензии где угодно, остальные слова (copyright
+// и т.п.) - только в начале файла, иначе ловят слово "лицензия" в обычном комментарии.
 func isLicenseHeader(c Comment) bool {
 	if spdxRe.MatchString(c.Text) {
 		return true
@@ -105,8 +105,10 @@ const (
 
 var (
 	bannerRe = regexp.MustCompile(`^\s*[-=*#_~+]{6,}\s*$`)
-	todoRe   = regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX)\b`)
-	ownerRe  = regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX)\b\s*[(\[]|` +
+	// Маркер пишется капсом или со знаком после него: иначе правило ловит обычное
+	// слово - в проекте с фичей "ToDo" оно не маркер, а просто слово.
+	todoRe  = regexp.MustCompile(`\b(?:TODO|FIXME|HACK|XXX|BUG)\b|\b(?i:todo|fixme|hack)\s*[:(]`)
+	ownerRe = regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX)\b\s*[(\[]|` +
 		`(?i)(https?://|#\d+|[A-Z]+-\d+|@[a-z][\w.-]+)`)
 	// Ченджлог - это событие с датой или версией. Без них "Update a document"
 	// из JSDoc уходит в ложные: там Update это название операции, не история.
@@ -125,7 +127,7 @@ var (
 )
 
 // structChecks: maxLines - предел длины комментария, 0 отключает проверку.
-func structChecks(maxLines int, c Comment) []Finding {
+func structChecks(maxLines, maxLineLen int, c Comment) []Finding {
 	var out []Finding
 	add := func(line int, rule, fix, sample string) {
 		out = append(out, Finding{File: c.File, Category: StructCategory,
@@ -133,10 +135,26 @@ func structChecks(maxLines int, c Comment) []Finding {
 	}
 	lines := strings.Split(c.Text, "\n")
 
-	if maxLines > 0 && c.Lines > maxLines {
+	// Пакетная документация - это и есть то место, куда правило предлагает
+	// выносить описание. Штрафовать её за длину бессмысленно.
+	isPkgDoc := strings.HasPrefix(c.Next, "package ")
+	// ponytail-пометка обязана называть потолок и путь апгрейда, в две строки
+	// она вместе с причиной не влезает. Гнать её под лимит - терять смысл.
+	hasPonytail := strings.Contains(c.Text, "ponytail:")
+	if maxLines > 0 && c.Lines > maxLines && !isPkgDoc && !hasPonytail {
 		add(c.Start, "Длинный комментарий",
 			fmt.Sprintf("Уложись в %d строки: оставь причину решения, описание вынеси в документацию", maxLines),
 			fmt.Sprintf("строк: %d", c.Lines))
+	}
+	// Без предела длины строки правило про две строки обходится склейкой:
+	// тот же текст в одну строку на 140 символов формально проходит.
+	for i, l := range lines {
+		if maxLineLen > 0 && len([]rune(l)) > maxLineLen {
+			add(c.Start+i, "Длинная строка комментария",
+				fmt.Sprintf("Перенеси по %d символов: склеить строки не значит сократить", maxLineLen),
+				fmt.Sprintf("символов: %d", len([]rune(l))))
+			break
+		}
 	}
 	for i, l := range lines {
 		if bannerRe.MatchString(l) {
@@ -147,8 +165,8 @@ func structChecks(maxLines int, c Comment) []Finding {
 	if why := commentedOutCode(c.Lang, c.Text, lines); why != "" {
 		add(c.Start, "Закомментированный код", "Удали: история кода живёт в git, а не в комментарии", why)
 	}
-	if m := todoRe.FindStringIndex(c.Text); m != nil && !ownerRe.MatchString(c.Text) {
-		at := strings.Count(c.Text[:m[0]], "\n")
+	if m := todoMarker(c.Text); m >= 0 && !ownerRe.MatchString(c.Text) {
+		at := strings.Count(c.Text[:m], "\n")
 		add(c.Start+at, "TODO без владельца",
 			"Добавь ссылку на задачу или имя: TODO(имя): ... иначе это вечный TODO",
 			excerpt(c.Text, at+1))
@@ -176,10 +194,8 @@ func structChecks(maxLines int, c Comment) []Finding {
 // Без них "// TODO: if x == nil { ... }" уходит в закомментированный код.
 var proseMarkers = regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX|BUG|e\.g\.|i\.e\.|напр\.)\b|https?://`)
 
-// commentedOutCode. Для Go разбираем тело комментария настоящим парсером, как
-// это делает go-critic: эвристика по символам ошибается и в обе стороны.
-// Для остальных языков штатного парсера в стандартной библиотеке нет, поэтому
-// остаётся доля строк, похожих на код.
+// commentedOutCode: Go разбираем настоящим парсером, как go-critic.
+// Для остальных языков парсера в stdlib нет, остаётся эвристика по символам.
 // ponytail: потолок - TS/Swift/Svelte судятся регуляркой; апгрейд - парсер.
 func commentedOutCode(lang, text string, lines []string) string {
 	if len(strings.TrimSpace(text)) < 15 || proseMarkers.MatchString(text) {
@@ -212,6 +228,24 @@ func parsesAsGo(text string) bool {
 	// Объявления верхнего уровня в тело функции не лезут, пробуем отдельно.
 	_, err = parser.ParseFile(token.NewFileSet(), "", "package p\n"+text+"\n", parser.SkipObjectResolution)
 	return err == nil
+}
+
+// todoMarker - позиция первого маркера вне кавычек. Текст о самом чекере
+// цитирует "TODO:" как пример, и это не задача, а цитата.
+func todoMarker(text string) int {
+	for _, m := range todoRe.FindAllStringIndex(text, -1) {
+		if !inQuotes(text, m[0]) {
+			return m[0]
+		}
+	}
+	return -1
+}
+
+func inQuotes(text string, pos int) bool {
+	start := strings.LastIndexByte(text[:pos], '\n') + 1
+	line := text[start:pos]
+	return strings.Count(line, `"`)%2 == 1 || strings.Count(line, "`")%2 == 1 ||
+		strings.Count(line, "«") > strings.Count(line, "»")
 }
 
 func codeLikeness(lines []string) (int, float64) {

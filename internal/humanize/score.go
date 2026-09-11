@@ -103,10 +103,10 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 	}
 
 	// 5. Ровный ритм: чем ниже CV относительно цели, тем больше штраф.
-	if r.Rhythm.Sentences >= 4 && r.Rhythm.CVLen < t.CVHumanTarget {
-		pen := min(20, roundInt((t.CVHumanTarget-r.Rhythm.CVLen)/t.CVHumanTarget*30))
+	if target := rs.CVTarget(r.Genre); r.Rhythm.Sentences >= 4 && r.Rhythm.CVLen < target {
+		pen := min(20, roundInt((target-r.Rhythm.CVLen)/target*30))
 		if pen > 0 {
-			add(fmt.Sprintf("ровный ритм (CV=%.3f, цель ≥%.2f)", r.Rhythm.CVLen, t.CVHumanTarget), pen)
+			add(fmt.Sprintf("ровный ритм (CV=%.3f, цель ≥%.2f)", r.Rhythm.CVLen, target), pen)
 		}
 	}
 
@@ -166,9 +166,8 @@ func roundInt(v float64) int {
 	return int(v + 0.5)
 }
 
-// MarkerVerdict - плотность маркеров, а не вердикт об авторстве. Абсолютный
-// счёт из оригинала на длинном тексте всегда давал "AI": семь маркеров на
-// тысячу слов и семь на сотню - разные вещи. Полосы здесь свои, не измеренные.
+// MarkerVerdict - плотность маркеров, а не вердикт об авторстве: абсолютный счёт
+// на длинном тексте всегда давал "AI". Полосы здесь свои, не измеренные.
 func MarkerVerdict(rs *RuleSet, hits []Hit, words int) string {
 	total := 0
 	for _, h := range hits {

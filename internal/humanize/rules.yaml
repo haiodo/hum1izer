@@ -418,6 +418,8 @@ genres:
     mute_bans: []
     mute_categories: []
   academic:
+    # научный текст ровнее разговорного: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.35
     mute_bans:
       - 'Является'
       - 'Длинное тире'
@@ -428,6 +430,8 @@ genres:
       - 'В связи с этим'
     mute_categories: ['Канцелярит', 'Кальки', 'Контекстуализаторы', 'Формула-выводы']
   legal:
+    # юридический ещё ровнее: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.35
     mute_bans:
       - 'Является'
       - 'Данный/Данная/Данное'
@@ -437,6 +441,8 @@ genres:
       - 'Короткое тире'
     mute_categories: ['Канцелярит', 'Кальки', 'Контекстуализаторы']
   fiction:
+    # проза рваная по природе: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.55
     mute_bans:
       - 'Длинное тире'
       - 'Короткое тире'
@@ -445,6 +451,8 @@ genres:
       - 'Не просто X, а Y'
     mute_categories: ['Параллелизмы']
   news:
+    # новость - деловой регистр: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.40
     mute_bans:
       - 'Является'
       - 'Длинное тире'
@@ -455,6 +463,8 @@ genres:
   # Комментарии в коде и сообщения коммитов: прозаические правила те же,
   # специфика вынесена в rules-code.yaml и codecheck.go.
   code:
+    # комментарий короткий и ровный: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.35
     # Тире в комментариях ловится, но их там столько, что отчёт превращается в
     # список тире. Типографику правь отдельным проходом --genre marketing.
     mute_bans:
@@ -462,5 +472,7 @@ genres:
       - 'Короткое тире'
     mute_categories: []
   commit:
+    # сообщение коммита тем более: порог CV из voice.toml humanize-text-skill
+    cv_human_target: 0.35
     mute_bans: []
     mute_categories: []
