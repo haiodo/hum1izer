@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/haiodo/hum1izer/internal/code"
+	"github.com/haiodo/hum1izer/internal/config"
 	"github.com/haiodo/hum1izer/internal/humanize"
 	"github.com/haiodo/hum1izer/internal/skill"
 
@@ -25,6 +27,7 @@ const usage = `hum1izer - проверка текста, комментарие�
   hum1izer --code путь...          комментарии в .go .ts .tsx .js .svelte .swift
   hum1izer --code репозиторий      то же плюс последние коммиты, если там git
   hum1izer install --claude ...    поставить скилл для агента
+  hum1izer init [путь]             создать .hum1izer.yaml с настройками проекта
 
 Флаги прозы:
   --genre   жанр текста: marketing (по умолчанию), academic, legal, fiction, news
@@ -36,6 +39,13 @@ const usage = `hum1izer - проверка текста, комментарие�
   --commits N   сколько последних коммитов проверить, 0 - не проверять (20)
   --max-lines N комментарий длиннее скольких строк - находка, 0 - не считать (2)
   --skip-tests  пропускать _test.go, *.test.*, *.spec.*
+
+Настройки проекта:
+  .hum1izer.yaml ищется от проверяемого каталога вверх до корня. В нём живут
+  предел длины комментария, языки, исключения и отключённые правила. Флаги
+  командной строки перекрывают файл.
+  --config F  взять этот файл настроек
+  --no-config игнорировать .hum1izer.yaml
 
 Вывод:
   --format  text (по умолчанию), jsonl, json, quiet
@@ -52,8 +62,13 @@ jsonl - формат для агента: одна строка JSON на ком
 `
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "install" {
-		os.Exit(skill.Run(os.Args[2:], version))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "install":
+			os.Exit(skill.Run(os.Args[2:], version))
+		case "init":
+			os.Exit(runInit(os.Args[2:]))
+		}
 	}
 
 	genre := flag.String("genre", "marketing", "жанр текста")
@@ -68,6 +83,8 @@ func main() {
 	commits := flag.Int("commits", 20, "сколько последних коммитов проверить")
 	maxLines := flag.Int("max-lines", 2, "комментарий длиннее скольких строк считать находкой, 0 - не считать")
 	skipTests := flag.Bool("skip-tests", false, "пропускать тестовые файлы")
+	cfgPath := flag.String("config", "", "файл настроек вместо поиска .hum1izer.yaml")
+	noConfig := flag.Bool("no-config", false, "игнорировать .hum1izer.yaml")
 	showVersion := flag.Bool("version", false, "показать версию")
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	flag.Parse()
@@ -80,6 +97,29 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
+	given := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { given[f.Name] = true })
+
+	cfg, err := loadConfig(*cfgPath, *noConfig, flag.Arg(0))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "настройки: %v\n", err)
+		os.Exit(2)
+	}
+	if !given["rules"] && cfg.RulesFile != "" {
+		*rulesPath = resolve(cfg, cfg.RulesFile)
+	}
+	if !given["genre"] && cfg.Genre != "" {
+		*genre = cfg.Genre
+	}
+	if !given["max-lines"] && cfg.Comments.MaxLines != nil {
+		*maxLines = *cfg.Comments.MaxLines
+	}
+	if !given["commits"] && cfg.Comments.Commits != nil {
+		*commits = *cfg.Comments.Commits
+	}
+	if !given["skip-tests"] && cfg.Comments.SkipTests != nil {
+		*skipTests = *cfg.Comments.SkipTests
+	}
 	switch {
 	case *asJSON:
 		*format = "json"
@@ -88,7 +128,7 @@ func main() {
 	}
 	if *codeMode {
 		os.Exit(runCode(flag.Args(), codeOpts{
-			rules: *rulesPath, format: *format, top: *top, limit: *limit,
+			cfg: cfg, rules: *rulesPath, format: *format, top: *top, limit: *limit,
 			commits: *commits, maxLines: *maxLines, skipTests: *skipTests,
 		}))
 	}
@@ -143,17 +183,45 @@ func runText(args []string, rulesPath, lang, genre, format string, top int) int 
 }
 
 type codeOpts struct {
+	cfg                 config.Config
 	rules, format       string
 	top, limit, commits int
 	maxLines            int
 	skipTests           bool
 }
 
+// loadConfig: явный файл, поиск вверх от цели проверки, либо пустые настройки.
+func loadConfig(path string, disabled bool, target string) (config.Config, error) {
+	switch {
+	case disabled:
+		return config.Config{}, nil
+	case path != "":
+		return config.Load(path)
+	case target == "-":
+		return config.Find(".")
+	}
+	return config.Find(target)
+}
+
+// resolve: путь из настроек считается от каталога с файлом настроек.
+func resolve(cfg config.Config, path string) string {
+	if cfg.Path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(filepath.Dir(cfg.Path), path)
+}
+
 // runCode: комментарии из исходников и, если в аргументе лежит git-репозиторий,
 // сообщения последних коммитов. И то и другое проверяется как обычная проза.
 func runCode(args []string, o codeOpts) int {
 	cs := code.CodeSets{MaxLines: o.maxLines}
-	var err error
+	excludes, err := o.cfg.Excludes()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "исключения: %v\n", err)
+		return 2
+	}
+	filter := code.Filter{SkipTests: o.skipTests, Langs: o.cfg.AllowedLangs(), Exclude: excludes}
+
 	if cs.RU, err = loadProse(o.rules, "ru"); err != nil {
 		fmt.Fprintf(os.Stderr, "русские правила: %v\n", err)
 		return 2
@@ -171,13 +239,13 @@ func runCode(args []string, o codeOpts) int {
 	files, blocks, exit := 0, 0, 0
 	collect := func(c code.Comment, genre string) {
 		blocks++
-		if f := code.CheckComment(cs, c, genre); len(f) > 0 {
+		if f := allowed(o.cfg, code.CheckComment(cs, c, genre)); len(f) > 0 {
 			items = append(items, code.NewItem(c, f))
 		}
 	}
 
 	for _, root := range args {
-		paths, err := code.WalkCode(root, o.skipTests)
+		paths, err := code.WalkCode(root, filter)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", root, err)
 			exit = 2
@@ -228,6 +296,20 @@ func runCode(args []string, o codeOpts) int {
 		printCodeReport(items, files, blocks, o.limit, o.top)
 	}
 	return exit
+}
+
+// allowed отсеивает то, что проект отключил в .hum1izer.yaml.
+func allowed(cfg config.Config, f []code.Finding) []code.Finding {
+	if len(cfg.Rules.Only) == 0 && len(cfg.Rules.Disable) == 0 {
+		return f
+	}
+	out := f[:0:0]
+	for _, x := range f {
+		if cfg.Allow(x.Rule, x.Category) {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 func read(src string) (string, error) {

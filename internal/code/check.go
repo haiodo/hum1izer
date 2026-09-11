@@ -11,12 +11,13 @@ import (
 
 // Finding - одна находка в комментарии или коммите, с абсолютным номером строки.
 type Finding struct {
-	File   string `json:"file"`
-	Line   int    `json:"line"`
-	Rule   string `json:"rule"`
-	Fix    string `json:"fix,omitempty"`
-	Sample string `json:"sample,omitempty"`
-	Hard   bool   `json:"hard"`
+	File     string `json:"file"`
+	Category string `json:"category,omitempty"`
+	Line     int    `json:"line"`
+	Rule     string `json:"rule"`
+	Fix      string `json:"fix,omitempty"`
+	Sample   string `json:"sample,omitempty"`
+	Hard     bool   `json:"hard"`
 }
 
 // CodeSets - наборы правил для кода: язык выбирается по самому комментарию,
@@ -61,14 +62,20 @@ func ruleFindings(rs *humanize.RuleSet, c Comment, genre string) []Finding {
 		for _, h := range group.hits {
 			for _, ln := range h.Lines {
 				out = append(out, Finding{
-					File: c.File, Line: c.Start + ln - 1, Rule: h.Marker,
-					Fix: h.Fix, Hard: group.hard, Sample: excerpt(c.Text, ln),
+					File: c.File, Category: h.Category, Line: c.Start + ln - 1,
+					Rule: h.Marker, Fix: h.Fix, Hard: group.hard, Sample: excerpt(c.Text, ln),
 				})
 			}
 		}
 	}
 	return out
 }
+
+// Категории структурных проверок: по ним их можно отключить целиком.
+const (
+	StructCategory = "Структура комментария"
+	CommitCategory = "Форма коммита"
+)
 
 // --- структурные проверки -------------------------------------------------
 
@@ -95,7 +102,8 @@ var (
 func structChecks(maxLines int, c Comment) []Finding {
 	var out []Finding
 	add := func(line int, rule, fix, sample string) {
-		out = append(out, Finding{File: c.File, Line: line, Rule: rule, Fix: fix, Sample: sample})
+		out = append(out, Finding{File: c.File, Category: StructCategory,
+			Line: line, Rule: rule, Fix: fix, Sample: sample})
 	}
 	lines := strings.Split(c.Text, "\n")
 
@@ -115,8 +123,10 @@ func structChecks(maxLines int, c Comment) []Finding {
 			fmt.Sprintf("%d из %d строк похожи на код", n, len(lines)))
 	}
 	if m := todoRe.FindStringIndex(c.Text); m != nil && !ownerRe.MatchString(c.Text) {
-		add(c.Start+strings.Count(c.Text[:m[0]], "\n"), "TODO без владельца",
-			"Добавь ссылку на задачу или имя: TODO(имя): ... иначе это вечный TODO", excerpt(c.Text, 0))
+		at := strings.Count(c.Text[:m[0]], "\n")
+		add(c.Start+at, "TODO без владельца",
+			"Добавь ссылку на задачу или имя: TODO(имя): ... иначе это вечный TODO",
+			excerpt(c.Text, at+1))
 	}
 	if m := changelogRe.FindStringIndex(c.Text); m != nil {
 		add(c.Start+strings.Count(c.Text[:m[0]], "\n"), "Ченджлог в комментарии",
@@ -214,7 +224,8 @@ const subjectLimit = 72
 func commitChecks(c Comment) []Finding {
 	var out []Finding
 	add := func(rule, fix, sample string) {
-		out = append(out, Finding{File: c.File, Line: 1, Rule: rule, Fix: fix, Sample: sample})
+		out = append(out, Finding{File: c.File, Category: CommitCategory,
+			Line: 1, Rule: rule, Fix: fix, Sample: sample})
 	}
 	subject := c.Text
 	if i := strings.IndexByte(subject, '\n'); i >= 0 {
@@ -290,11 +301,12 @@ type Item struct {
 }
 
 type ItemFinding struct {
-	Rule   string `json:"rule"`
-	Fix    string `json:"fix,omitempty"`
-	Line   int    `json:"line"`
-	Hard   bool   `json:"hard"`
-	Sample string `json:"sample,omitempty"`
+	Rule     string `json:"rule"`
+	Category string `json:"category,omitempty"`
+	Fix      string `json:"fix,omitempty"`
+	Line     int    `json:"line"`
+	Hard     bool   `json:"hard"`
+	Sample   string `json:"sample,omitempty"`
 }
 
 // NewItem собирает блок. Повторы одного правила на одной строке схлопываются:
@@ -314,7 +326,8 @@ func NewItem(c Comment, f []Finding) Item {
 		}
 		seen[key] = true
 		it.Findings = append(it.Findings, ItemFinding{
-			Rule: x.Rule, Fix: x.Fix, Line: x.Line, Hard: x.Hard, Sample: x.Sample})
+			Rule: x.Rule, Category: x.Category, Fix: x.Fix,
+			Line: x.Line, Hard: x.Hard, Sample: x.Sample})
 		if x.Hard {
 			it.Score += 3
 			continue

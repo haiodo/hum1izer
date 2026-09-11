@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/haiodo/hum1izer/internal/config"
 )
 
 // Comment - блок комментария или текст коммита: то, что мы проверяем как прозу.
@@ -41,15 +43,46 @@ var skipDirs = map[string]bool{
 	".next": true, "target": true, "Pods": true, ".reports": true,
 }
 
-var codeExts = map[string]bool{
-	".go": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true,
-	".mjs": true, ".cjs": true, ".svelte": true, ".swift": true,
-}
-
 var generatedRe = regexp.MustCompile(`(?m)^(//|#|/\*) *Code generated .* DO NOT EDIT|@generated|eslint-disable`)
 
+// Filter - что из дерева брать. Пустой Filter означает все поддерживаемые языки.
+type Filter struct {
+	SkipTests bool
+	Langs     map[string]bool // nil - все языки
+	Exclude   []*regexp.Regexp
+}
+
+func (f Filter) allow(root, path string) bool {
+	lang := config.LangOf(path)
+	if lang == "" {
+		return false
+	}
+	if f.Langs != nil && !f.Langs[lang] {
+		return false
+	}
+	name := filepath.Base(path)
+	if strings.HasSuffix(name, ".d.ts") || strings.HasSuffix(name, ".pb.go") {
+		return false
+	}
+	if f.SkipTests && (strings.HasSuffix(name, "_test.go") ||
+		strings.Contains(name, ".test.") || strings.Contains(name, ".spec.")) {
+		return false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		rel = path
+	}
+	rel = filepath.ToSlash(rel)
+	for _, re := range f.Exclude {
+		if re.MatchString(rel) || re.MatchString(name) {
+			return false
+		}
+	}
+	return true
+}
+
 // WalkCode собирает файлы с поддерживаемыми расширениями. Файл передаётся как есть.
-func WalkCode(root string, skipTests bool) ([]string, error) {
+func WalkCode(root string, f Filter) ([]string, error) {
 	st, err := os.Stat(root)
 	if err != nil {
 		return nil, err
@@ -68,15 +101,9 @@ func WalkCode(root string, skipTests bool) ([]string, error) {
 			}
 			return nil
 		}
-		name := d.Name()
-		if !codeExts[filepath.Ext(name)] || strings.HasSuffix(name, ".d.ts") || strings.HasSuffix(name, ".pb.go") {
-			return nil
+		if f.allow(root, path) {
+			out = append(out, path)
 		}
-		if skipTests && (strings.HasSuffix(name, "_test.go") ||
-			strings.Contains(name, ".test.") || strings.Contains(name, ".spec.")) {
-			return nil
-		}
-		out = append(out, path)
 		return nil
 	})
 	return out, err
