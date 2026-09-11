@@ -1,0 +1,322 @@
+# hum1izer rules - English set. Format:
+#
+#   lit:      substring, case-insensitive
+#   re:       regex as-is (RE2)
+#   word_re:  regex wrapped in word boundaries automatically (Go's \b is ASCII-only,
+#             which is fine here - do not add \b yourself, the loader does it)
+#   builtin:  rule computed in code: en_dash (fake_range and latin_in_cyrillic are
+#             Russian-only and are not used in this file)
+#
+# Go's regexp is RE2: no lookahead, no lookbehind, no backreferences.
+#
+# This is the English analogue of rules.yaml (same schema, same loader). Ban sets,
+# thresholds and category split are adapted from the Russian file; the corpus
+# grounding for the numeric thresholds (AINL-Eval, LLMTrace, M4) is documented there:
+# humanizer-ru (MIT, (c) Ilya Utov): https://github.com/ilyautov/humanizer-ru
+
+version: 1
+
+thresholds:
+  cv_human_target: 0.45    # target spread of sentence lengths
+  cv_ai_threshold: 0.35    # below this - rhythm reads as flat/machine
+  nominal_target: 3.0      # nominalizations per 100 words (morph() heuristic is Russian-suffix based, always 0 for English - kept for schema parity)
+  para_cv_ai: 0.35         # below this - paragraphs are all one length
+  para_min_count: 6        # fewer paragraphs than this - rhythm not judged
+  listicle_share_ai: 0.30  # bullet-line share above this - listicle
+  listicle_min_items: 6
+  band_clean: 85            # >= - clean
+  band_edit: 60             # >= - spot edit, below - rewrite
+
+# Density bans: a marker becomes a ban only from two hits and denser than 1 per N words.
+freq_bans:
+  'Serves as a': 500
+
+hard_bans:
+  - name: "In today's fast-paced world"
+    fix: 'Start with a concrete fact or question instead of a scene-setting frame.'
+    word_re: 'in\s+today.s\s+fast-paced\s+world|in\s+the\s+modern\s+world|in\s+an\s+era\s+of'
+  - name: 'It is important to note that'
+    fix: 'Drop the lead-in, keep the claim.'
+    word_re: 'it\s+is\s+important\s+to\s+note\s+that|it.s\s+worth\s+noting\s+that'
+  - name: 'Delve into'
+    fix: 'Use a plain verb: explore, examine, cover.'
+    word_re: 'delve\s+into'
+  - name: 'In conclusion / To sum up / Overall'
+    fix: 'Delete the summary opener; end on the point itself.'
+    re: '(?:^|\n\s*(?:[-*•]\s*)?)(?:in\s+conclusion|to\s+sum\s+up|overall)\s*,'
+  - name: 'Not just X, but Y'
+    fix: 'State the claim directly; keep only Y.'
+    re: 'not\s+just[^.!?\n]{1,40}?\bbut\b'
+  - name: "Isn't just X, it's Y"
+    fix: 'State the claim directly; keep only Y.'
+    re: 'isn.t\s+just[^.!?\n]{1,40}?it.s\b'
+  - name: 'A testament to'
+    fix: "Name the specific cause instead of calling it a 'testament'."
+    word_re: 'a\s+testament\s+to'
+  - name: 'Navigate the complexities/landscape'
+    fix: "Name the actual problem instead of a vague 'landscape'."
+    word_re: 'navigat(?:e|es|ing)\s+the\s+(?:complexit[\p{L}]*|landscape)\s+of'
+  - name: 'Unlock the potential'
+    fix: 'State the concrete result if it is in the text; otherwise cut.'
+    word_re: 'unlock(?:s|ing|ed)?\s+(?:the\s+|its\s+|their\s+)?(?:full\s+)?potential'
+  - name: 'At the end of the day'
+    fix: 'Cut the filler opener; start with the point.'
+    word_re: 'at\s+the\s+end\s+of\s+the\s+day'
+  - name: 'Rich tapestry'
+    fix: "Name the specific elements instead of calling them a 'tapestry'."
+    word_re: 'rich\s+tapestry'
+  - name: 'Plays a crucial/vital/pivotal role'
+    fix: 'Keep only the reason it matters, if the text gives one.'
+    word_re: 'plays?\s+an?\s+(?:crucial|vital|pivotal|key|important)\s+role'
+  - name: 'Serves as a'
+    fix: "Say what it does, not what it 'serves as'."
+    word_re: 'serves?\s+as\s+an?'
+  - name: 'Em dash'
+    fix: 'Use a comma, colon, period, or hyphen; or restructure the sentence.'
+    re: '—'
+  - name: 'En dash'
+    fix: "Legitimate only in numeric ranges; use 'to' or a hyphen otherwise."
+    builtin: en_dash
+  - name: 'I hope this helps / Let me know if you need'
+    fix: 'Chat artifact: delete it entirely.'
+    re: 'i\s+hope\s+this\s+helps|let\s+me\s+know\s+if\s+you\s+need'
+  - name: 'As an AI language model'
+    fix: 'Chat artifact: delete it entirely.'
+    lit: as an ai language model
+  - name: 'Certainly! / Great question!'
+    fix: 'Chat artifact: delete it entirely.'
+    re: 'certainly!|great\s+question!'
+  - name: 'In a world where'
+    fix: 'Cut the scene-setting opener; start with the actual subject.'
+    word_re: 'in\s+a\s+world\s+where'
+  - name: 'It goes without saying'
+    fix: 'If it goes without saying, cut it.'
+    word_re: 'it\s+goes\s+without\s+saying'
+  - name: 'The possibilities are endless'
+    fix: 'Name the actual possibilities, or cut the line.'
+    word_re: 'the\s+possibilities\s+are\s+endless'
+  - name: 'Without further ado'
+    fix: 'Cut the throat-clearing opener.'
+    word_re: 'without\s+further\s+ado'
+
+categories:
+  - name: 'Corporate adjectives'
+    fix: 'Cut the corporate adjective or name what actually changed.'
+    rules:
+      - lit: robust
+      - name: seamless(ly)
+        word_re: 'seamless(?:ly)?'
+      - lit: comprehensive
+      - lit: cutting-edge
+      - lit: state-of-the-art
+      - lit: best-in-class
+      - lit: holistic
+      - lit: synergy
+      - lit: paradigm shift
+      - name: game-changer
+        word_re: 'game.changer'
+      - lit: world-class
+      - lit: next-generation
+
+  - name: 'Latinate verbs'
+    fix: 'Use the plain verb: use, ease, simplify, run, push, come up with.'
+    rules:
+      - lit: utilize
+      - lit: leverage
+      - lit: facilitate
+      - lit: streamline
+      - lit: operationalize
+      - lit: incentivize
+      - lit: ideate
+
+  - name: 'Overused transitions'
+    fix: 'Cut the transition or replace it with the actual logical link.'
+    rules:
+      - lit: furthermore
+      - lit: moreover
+      - lit: additionally
+      - lit: that being said
+      - lit: with that said
+      - lit: on the other hand
+
+  - name: 'Empty intensifiers'
+    fix: 'Cut the intensifier; let the evidence carry the weight.'
+    rules:
+      - lit: truly
+      - lit: incredibly
+      - lit: remarkably
+      - lit: undoubtedly
+      - lit: absolutely
+      - lit: significantly
+      - lit: notably
+      - lit: arguably
+
+  - name: 'Hedging'
+    fix: 'State the claim directly, or name the specific condition.'
+    rules:
+      - lit: it could be argued
+      - lit: some might say
+      - lit: generally speaking
+      - lit: in many ways
+      - name: to a certain/some extent
+        word_re: 'to\s+a\s+(?:certain|some)\s+extent'
+
+  - name: 'Tutorial voice'
+    fix: 'Drop the classroom narration; show the result, not the walk-through.'
+    rules:
+      - name: "let's"
+        word_re: 'let.s'
+      - lit: we will
+      - lit: now we
+      - lit: as you can see
+      - lit: in this example
+      - lit: 'first, we'
+
+  - name: 'Chatbot artifacts'
+    fix: 'Chat artifact: delete it entirely.'
+    rules:
+      - lit: as an ai
+      - name: "i cannot / i don't have access to"
+        re: 'i\s+cannot\b|i\s+don.t\s+have\s+access\s+to'
+      - name: "here's a"
+        word_re: 'here.s\s+a'
+      - lit: feel free to
+      - lit: sure!
+      - lit: of course!
+      - lit: happy to help
+      - lit: 'certainly, here'
+      - lit: below is a
+      - lit: hope that helps
+
+  - name: 'Formulaic essay structure'
+    fix: 'Cut the essay scaffolding; let the structure show through the content.'
+    rules:
+      - name: firstly/secondly/thirdly
+        word_re: 'firstly|secondly|thirdly'
+      - lit: in summary
+      - lit: to conclude
+      - lit: moving forward
+      - lit: last but not least
+
+  - name: 'Marketing cliches'
+    fix: 'Name the actual change instead of the marketing verb.'
+    rules:
+      - lit: revolutioniz
+      - lit: transform the way
+      - lit: empower
+      - lit: supercharg
+      - lit: take it to the next level
+      - lit: one-stop shop
+
+  - name: 'Hollow significance'
+    fix: 'Cut the filler adjective or name the specific stake.'
+    rules:
+      - lit: crucial
+      - lit: vital
+      - lit: essential
+      - name: a key role/factor/element
+        word_re: 'a\s+key\s+(?:role|factor|element|component|driver)'
+      - lit: cannot be overstated
+      - name: in an increasingly [adj] world
+        word_re: 'in\s+an\s+increasingly\s+[\p{L}]+\s+world'
+
+  - name: 'Emoji decoration'
+    fix: 'Delete decorative emoji.'
+    rules:
+      - name: checkmark/cross/rocket/sparkles/fire/bulb/warning
+        re: '[\x{2705}\x{274c}\x{1f680}\x{2728}\x{1f525}\x{1f4a1}\x{26a0}]'
+
+  - name: 'Symbol substitution / typography'
+    fix: 'Character substitution: restore plain ASCII punctuation.'
+    rules:
+      - name: en dash
+        builtin: en_dash
+      - name: curly quotes
+        re: '[\x{2018}\x{2019}\x{201c}\x{201d}]'
+      - name: ellipsis character
+        lit: '…'
+      - name: non-breaking space
+        re: '\x{00a0}'
+      - name: zero-width characters
+        re: '[\x{200b}\x{200c}\x{200d}\x{feff}\x{2060}]'
+
+  - name: 'Weasel passives'
+    fix: 'Name who did it, or cut the hedge and state the fact.'
+    rules:
+      - lit: it is widely regarded
+      - lit: is considered to be
+      - lit: has been shown to
+
+  - name: 'Not only ... but also'
+    fix: '"X. And Y." or a plain list.'
+    rules:
+      - name: not only X but also Y
+        re: 'not\s+only[^.!?\n]{1,40}?but\s+also'
+
+  - name: 'Bureaucratic nouns'
+    fix: 'Unpack the nominalization into a verb: "implementation of X" -> "implement X"'
+    rules:
+      - lit: utilization
+      - lit: implementation of
+      - lit: facilitation of
+      - lit: optimization of
+      - lit: in order to
+      - lit: due to the fact that
+      - lit: with regard to
+      - lit: prior to
+      - lit: subsequent to
+
+# Category whose hits mean the text was pasted straight out of a chatbot UI.
+copy_paste_category: 'Chatbot artifacts'
+
+# Genre filter: some bans are normal register in a given genre, not a machine tell.
+# Without a genre the check is strict; thresholds are calibrated to that mode.
+genres:
+  marketing:
+    mute_bans: []
+    mute_categories: []
+  academic:
+    mute_bans:
+      - 'Em dash'
+      - 'En dash'
+      - 'Serves as a'
+      - 'In conclusion / To sum up / Overall'
+    mute_categories:
+      - 'Bureaucratic nouns'
+      - 'Overused transitions'
+      - 'Hedging'
+      - 'Weasel passives'
+  legal:
+    mute_bans:
+      - 'Serves as a'
+      - 'Em dash'
+      - 'En dash'
+    mute_categories:
+      - 'Bureaucratic nouns'
+      - 'Overused transitions'
+  fiction:
+    mute_bans:
+      - 'Em dash'
+      - 'En dash'
+      - 'Not just X, but Y'
+      - "Isn't just X, it's Y"
+    mute_categories:
+      - 'Not only ... but also'
+  news:
+    mute_bans:
+      - 'Serves as a'
+      - 'Em dash'
+      - 'En dash'
+    mute_categories:
+      - 'Bureaucratic nouns'
+  code:
+    mute_bans:
+      - 'Em dash'
+      - 'En dash'
+    mute_categories:
+      - 'Hollow significance'
+      - 'Symbol substitution / typography'
+  commit:
+    mute_bans: []
+    mute_categories:
+      - 'Bureaucratic nouns'

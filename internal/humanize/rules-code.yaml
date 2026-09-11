@@ -1,0 +1,108 @@
+# Правила для комментариев в коде и сообщений коммитов.
+# Языконезависимый слой: применяется поверх русского (rules.yaml) или
+# английского (rules-en.yaml) набора, который выбирается по самому тексту.
+#
+# Формат тот же, что и у остальных наборов:
+#   lit:      подстрока, регистронезависимо
+#   re:       регулярка RE2 как есть
+#   word_re:  регулярка, обрамлённая границами слова
+#   builtin:  правило, которое считает код
+#
+# Структурные проверки (длина блока, закомментированный код, пересказ имени
+# функции, баннеры, TODO без владельца, ченджлог, эссе в комментарии) живут в
+# codecheck.go: они смотрят на код рядом с комментарием, регуляркой это не взять.
+
+version: 1
+
+thresholds:
+  cv_human_target: 0.45
+  cv_ai_threshold: 0.40
+  nominal_target: 6.0
+  para_cv_ai: 0.35
+  para_min_count: 4
+  listicle_share_ai: 0.4
+  listicle_min_items: 5
+  band_clean: 85
+  band_edit: 60
+
+hard_bans:
+  - name: Комментарий сгенерирован ИИ
+    fix: Перепиши своими словами или удали - подпись модели в коде не нужна
+    re: '(?i)(generated|written|created)\s+(by|with|using)\s+(chatgpt|claude|copilot|gemini|gpt-?\d|an?\s+ai)'
+
+  - name: Заглушка вместо объяснения
+    fix: Допиши комментарий или удали - пустой маркер хуже отсутствия комментария
+    re: '(?i)(your code here|implement me|fill (this|me) in|to be (written|done)|здесь будет код|дописать позже|заполнить позже)'
+
+categories:
+  - name: Комментарий-пустышка
+    fix: Удали - заголовок повторяет то, что и так видно в коде
+    rules:
+      - name: constructor / getter / imports
+        re: '(?i)^\s*(constructor|getter|setter|imports?|exports?|variables?|constants?|types?|helpers?|utils?|main function|entry point|end of \w+|initialization|init)\s*[.:]?\s*$'
+      - name: конструктор / геттер / импорты
+        re: '(?i)^\s*(конструктор|геттер|сеттер|импорты|экспорты|переменные|константы|типы|хелперы|утилиты|точка входа|инициализация|конец \w+)\s*[.:]?\s*$'
+
+  - name: Пересказ очевидного
+    fix: Скажи, почему так сделано, а не что делает строка ниже
+    rules:
+      - name: this function is responsible for
+        re: '(?i)(this|the)\s+(function|method|class|component|helper|variable|constant)\s+(is used to|is responsible for|does|will|simply|just)'
+      - name: данная функция отвечает за
+        re: '(?i)(данн(ая|ый|ое)|эт(а|от|о))\s+(функция|метод|класс|компонент|переменная|константа)\s+(отвечает|нужн|служит|предназначен|просто)'
+      - name: loop through / returns the result
+        re: '(?i)(loop (through|over)|iterate (through|over)|check if|returns? the (result|value)|sets? the value)'
+      - name: цикл по / возвращает результат
+        re: '(?i)(цикл по|проходим по|перебираем|проверяем,? что|возвраща(ет|ем) результат|устанавлива(ет|ем) значение)'
+
+  - name: Пустая важность
+    fix: Назови конкретное поведение вместо обтекаемого глагола
+    rules:
+      - name: ensures that
+        word_re: 'ensures?\s+that'
+      - name: is responsible for / takes care of
+        word_re: '(?:is\s+responsible\s+for|takes\s+care\s+of|handles\s+the|deals\s+with|under\s+the\s+hood)'
+      - name: отвечает за / под капотом
+        word_re: '(?:отвечает\s+за|занимается\s+тем|обеспечивает\s+корректн|под\s+капотом)'
+
+  - name: Учебный тон в комментарии
+    fix: Комментарий не урок - убери обращение к читателю
+    rules:
+      - name: as you can see / let's / we need to
+        word_re: '(?:as\s+you\s+can\s+see|let\x27s\s+\p{L}+|we\s+(?:need\s+to|will|want\s+to)|now\s+we|first,?\s+we|note\s+that|keep\s+in\s+mind|for\s+demonstration)'
+      - name: как видно / давайте / обратите внимание
+        word_re: '(?:как\s+вид(?:но|им)|давайте|теперь\s+мы|сначала\s+мы|обрати(?:те)?\s+внимание|как\s+мы\s+пом?ним)'
+
+  - name: Извинение в комментарии
+    fix: 'Объясни причину и условие снятия: "так до перехода на X", а не "почему-то работает"'
+    rules:
+      - name: hopefully / not sure why / for some reason
+        word_re: '(?:hopefully|not\s+sure\s+(?:why|if)|for\s+some\s+reason|don\x27t\s+ask|this\s+is\s+ugly|shouldn\x27t\s+happen|black\s+magic)'
+      - name: почему-то / костыль / магия
+        word_re: '(?:почему-то|не\s+уверен|не\s+спрашивай(?:те)?|костыл[ья]|магия|так\s+исторически|быть\s+не\s+должно)'
+
+  - name: Комментарий-обещание
+    fix: Поставь задачу со ссылкой или убери - "временно" живёт годами
+    rules:
+      - name: temporary / for now / will be removed
+        word_re: '(?:temporary|temporarily|for\s+now|will\s+be\s+(?:removed|replaced|rewritten)|remove\s+(?:this\s+)?later|legacy\s+code)'
+      - name: временно / пока что / потом переделать
+        word_re: '(?:временн(?:о|ый|ая|ое)|пока\s+(?:что|так)|потом\s+(?:переделать|убрать|заменить)|убрать\s+позже|легаси)'
+
+  - name: Эмодзи в комментарии
+    fix: Убери эмодзи - в дифф и в grep они попадают шумом
+    rules:
+      - name: декоративные эмодзи
+        re: '[\x{2705}\x{274c}\x{26a0}\x{1f680}\x{2728}\x{1f525}\x{1f4a1}\x{1f389}\x{1f44d}\x{1f440}\x{1f6a8}\x{2b50}\x{1f41b}]'
+
+genres:
+  code:
+    mute_bans: []
+    mute_categories: []
+  commit:
+    # В коммите нет кода рядом, поэтому претензии к форме комментария не к месту.
+    mute_bans: []
+    mute_categories:
+      - 'Комментарий-пустышка'
+      - 'Пересказ очевидного'
+      - 'Комментарий-обещание'

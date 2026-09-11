@@ -1,0 +1,33 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - misspell
+    - nilerr
+    - revive
+    - unconvert
+    - usestdlibvars
+    - wastedassign
+  settings:
+    misspell:
+      locale: US
+      ignore-rules:
+        # Тексты правил и отчётов на русском, английский словарь тут не судья.
+        - humago
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gocritic, errcheck]
+
+formatters:
+  enable:
+    - gofmt
