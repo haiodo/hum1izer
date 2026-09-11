@@ -35,8 +35,8 @@ type Rhythm struct {
 	Questions   int     `json:"questions"`
 }
 
-// Morph — номинальность. ponytail: суффиксная эвристика вместо pymorphy3, не
-// отличает «решение задачи» от «решение принято»; апгрейд — морфоанализатор.
+// Morph - номинальность. Суффиксная эвристика вместо pymorphy3: не отличает
+// «решение задачи» от «решение принято», апгрейд - морфоанализатор.
 type Morph struct {
 	Nominalizations int     `json:"nominalizations"`
 	Per100          float64 `json:"per_100_words"`
@@ -249,10 +249,8 @@ func rhythm(text string) Rhythm {
 	return r
 }
 
-// Длина слова - третий по важности признак Байбера из 66 в работе PNAS
-// (arXiv 2410.16107): у GPT-моделей 114-116% от человеческой.
-// ponytail: потолок - длина слова растёт и от регистра, корпоративный текст
-// длиннее технической заметки независимо от автора. Поэтому в балл не идёт.
+// Третий по важности признак Байбера (PNAS, arXiv 2410.16107), но растёт и
+// от регистра: корпоративный текст длиннее заметки. Поэтому в балл не идёт.
 func meanWordLen(text string) float64 {
 	words := Words(text)
 	if len(words) == 0 {
@@ -428,7 +426,7 @@ func allStop(words []string) bool {
 }
 
 // countTitleCaseHeadings: «Ранняя Жизнь и Образование» — калька с английского.
-// ponytail: без словаря имён заголовок «Иван Петров и Пётр Иванов» даст ложное.
+// Без словаря имён заголовок «Иван Петров и Пётр Иванов» даст ложное.
 func countTitleCaseHeadings(text string) int {
 	lines := strings.Split(text, "\n")
 	hits := 0

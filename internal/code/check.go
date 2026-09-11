@@ -121,8 +121,8 @@ var (
 	codeLineRe = regexp.MustCompile(`^\s*(?:if|for|while|switch|return|func|function|const|let|var|import|export|class|struct|guard|public|private|protected|async|await|try|catch|else|case|print|console\.)\b|` +
 		`[;{}]\s*$|^\s*[\w.\[\]]+\s*(?::=|=|\+=|-=)\s*\S|^\s*[\w.]+\([^()]*\)\s*[;{]?\s*$`)
 	identSplitRe = regexp.MustCompile(`[^\p{L}\p{N}]+`)
-	// ponytail: RE2 без lookahead, поэтому HTTPServer режется как HTTPS+erver.
-	// Для сравнения слов комментария с именем этого хватает.
+	// RE2 без lookahead, поэтому HTTPServer режется как HTTPS+erver. Для
+	// сравнения слов комментария с именем этого хватает.
 	camelRe = regexp.MustCompile(`[A-Z][a-z]+|[a-z]+|[A-Z]+|\d+`)
 )
 
@@ -138,10 +138,7 @@ func structChecks(maxLines, maxLineLen int, c Comment) []Finding {
 	// Пакетная документация - это и есть то место, куда правило предлагает
 	// выносить описание. Штрафовать её за длину бессмысленно.
 	isPkgDoc := strings.HasPrefix(c.Next, "package ")
-	// ponytail-пометка обязана называть потолок и путь апгрейда, в две строки
-	// она вместе с причиной не влезает. Гнать её под лимит - терять смысл.
-	hasPonytail := strings.Contains(c.Text, "ponytail:")
-	if maxLines > 0 && c.Lines > maxLines && !isPkgDoc && !hasPonytail {
+	if maxLines > 0 && c.Lines > maxLines && !isPkgDoc {
 		add(c.Start, "Длинный комментарий",
 			fmt.Sprintf("Уложись в %d строки: оставь причину решения, описание вынеси в документацию", maxLines),
 			fmt.Sprintf("строк: %d", c.Lines))
@@ -194,9 +191,8 @@ func structChecks(maxLines, maxLineLen int, c Comment) []Finding {
 // Без них "// TODO: if x == nil { ... }" уходит в закомментированный код.
 var proseMarkers = regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX|BUG|e\.g\.|i\.e\.|напр\.)\b|https?://`)
 
-// commentedOutCode: Go разбираем настоящим парсером, как go-critic.
-// Для остальных языков парсера в stdlib нет, остаётся эвристика по символам.
-// ponytail: потолок - TS/Swift/Svelte судятся регуляркой; апгрейд - парсер.
+// commentedOutCode: Go разбираем парсером, как go-critic. Для TS, Swift и
+// Svelte парсера в stdlib нет, там регулярка - это и есть потолок проверки.
 func commentedOutCode(lang, text string, lines []string) string {
 	if len(strings.TrimSpace(text)) < 15 || proseMarkers.MatchString(text) {
 		return ""
@@ -266,7 +262,7 @@ func codeLikeness(lines []string) (int, float64) {
 }
 
 // restatesCode: "// set user name" над setUserName() не несёт информации.
-// ponytail: только однострочники, смысловой пересказ тут не ловится.
+// Только однострочники, смысловой пересказ тут не ловится.
 func restatesCode(c Comment) string {
 	if c.Lines != 1 || c.Next == "" {
 		return ""
