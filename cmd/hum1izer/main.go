@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/haiodo/hum1izer/internal/baseline"
 	"github.com/haiodo/hum1izer/internal/code"
 	"github.com/haiodo/hum1izer/internal/config"
 	"github.com/haiodo/hum1izer/internal/humanize"
@@ -47,6 +48,10 @@ const usage = `hum1izer - проверка текста, комментарие�
   --config F  взять этот файл настроек
   --no-config игнорировать .hum1izer.yaml
 
+Снимок для CI:
+  --baseline F      сверяться с файлом снимка и ругаться только на новое
+  --write-baseline  перезаписать снимок текущими находками
+
 Вывод:
   --format  text (по умолчанию), jsonl, json, quiet
   --limit N сколько блоков отдать, 0 - все. Первыми идут самые грязные
@@ -83,6 +88,8 @@ func main() {
 	commits := flag.Int("commits", 20, "сколько последних коммитов проверить")
 	maxLines := flag.Int("max-lines", 2, "комментарий длиннее скольких строк считать находкой, 0 - не считать")
 	skipTests := flag.Bool("skip-tests", false, "пропускать тестовые файлы")
+	basePath := flag.String("baseline", "", "файл снимка: ругаться только на новое")
+	writeBase := flag.Bool("write-baseline", false, "перезаписать снимок текущими находками")
 	cfgPath := flag.String("config", "", "файл настроек вместо поиска .hum1izer.yaml")
 	noConfig := flag.Bool("no-config", false, "игнорировать .hum1izer.yaml")
 	showVersion := flag.Bool("version", false, "показать версию")
@@ -120,6 +127,15 @@ func main() {
 	if !given["skip-tests"] && cfg.Comments.SkipTests != nil {
 		*skipTests = *cfg.Comments.SkipTests
 	}
+	if !given["baseline"] && cfg.Baseline != "" {
+		*basePath = resolve(cfg, cfg.Baseline)
+	}
+	// Снимок коммитов бессмыслен: каждый новый коммит - новая находка, файл
+	// пришлось бы переписывать после каждого. Сообщения проверяются отдельным
+	// прогоном или хуком commit-msg.
+	if *basePath != "" && !given["commits"] {
+		*commits = 0
+	}
 	switch {
 	case *asJSON:
 		*format = "json"
@@ -130,6 +146,7 @@ func main() {
 		os.Exit(runCode(flag.Args(), codeOpts{
 			cfg: cfg, rules: *rulesPath, format: *format, top: *top, limit: *limit,
 			commits: *commits, maxLines: *maxLines, skipTests: *skipTests,
+			baseline: *basePath, writeBaseline: *writeBase,
 		}))
 	}
 	os.Exit(runText(flag.Args(), *rulesPath, *lang, *genre, *format, *top))
@@ -185,9 +202,11 @@ func runText(args []string, rulesPath, lang, genre, format string, top int) int 
 type codeOpts struct {
 	cfg                 config.Config
 	rules, format       string
+	baseline            string
 	top, limit, commits int
 	maxLines            int
 	skipTests           bool
+	writeBaseline       bool
 }
 
 // loadConfig: явный файл, поиск вверх от цели проверки, либо пустые настройки.
@@ -277,10 +296,22 @@ func runCode(args []string, o codeOpts) int {
 	}
 
 	code.SortItems(items)
-	for _, it := range items {
-		for _, f := range it.Findings {
-			if f.Hard {
-				exit = 1
+
+	if o.baseline != "" {
+		var err error
+		if items, exit, err = applyBaseline(o, items); err != nil {
+			fmt.Fprintf(os.Stderr, "снимок: %v\n", err)
+			return 2
+		}
+		if o.writeBaseline {
+			return exit
+		}
+	} else {
+		for _, it := range items {
+			for _, f := range it.Findings {
+				if f.Hard {
+					exit = 1
+				}
 			}
 		}
 	}
@@ -296,6 +327,75 @@ func runCode(args []string, o codeOpts) int {
 		printCodeReport(items, files, blocks, o.limit, o.top)
 	}
 	return exit
+}
+
+// applyBaseline оставляет только те находки, которых нет в снимке. Код возврата
+// 1 ставится за новое, а не за жёсткое: на репозитории с тысячей находок
+// иначе не встроиться в CI.
+func applyBaseline(o codeOpts, items []code.Item) ([]code.Item, int, error) {
+	rel := relativeTo(o.baseline)
+	if o.writeBaseline {
+		var all []baseline.Entry
+		for _, it := range items {
+			for _, f := range it.Findings {
+				all = append(all, baseline.Entry{Hash: it.Hash, Rule: f.Rule, File: rel(it.File)})
+			}
+		}
+		if err := baseline.Write(o.baseline, all); err != nil {
+			return nil, 0, err
+		}
+		fmt.Printf("снимок записан: %s, находок %d\n", o.baseline, len(all))
+		return nil, 0, nil
+	}
+
+	base, err := baseline.Load(o.baseline)
+	if err != nil {
+		return nil, 0, err
+	}
+	fresh := items[:0:0]
+	newCount := 0
+	for _, it := range items {
+		kept := it.Findings[:0:0]
+		for _, f := range it.Findings {
+			if base.Known(baseline.Entry{Hash: it.Hash, Rule: f.Rule, File: rel(it.File)}) {
+				continue
+			}
+			kept = append(kept, f)
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		it.Findings = kept
+		newCount += len(kept)
+		fresh = append(fresh, it)
+	}
+	fmt.Fprintf(os.Stderr, "снимок %s: в базе %d, новых %d, исправлено %d\n",
+		o.baseline, base.Size(), newCount, base.Fixed())
+	exit := 0
+	if newCount > 0 {
+		exit = 1
+	}
+	return fresh, exit, nil
+}
+
+// relativeTo: пути в снимке считаются от каталога снимка, иначе файл нельзя
+// положить в git - у каждого он лежит по своему абсолютному пути.
+func relativeTo(basePath string) func(string) string {
+	dir, err := filepath.Abs(filepath.Dir(basePath))
+	if err != nil {
+		return func(p string) string { return p }
+	}
+	return func(p string) string {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return p
+		}
+		r, err := filepath.Rel(dir, abs)
+		if err != nil {
+			return filepath.ToSlash(p)
+		}
+		return filepath.ToSlash(r)
+	}
 }
 
 // allowed отсеивает то, что проект отключил в .hum1izer.yaml.

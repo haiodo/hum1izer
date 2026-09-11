@@ -41,6 +41,7 @@ type Config struct {
 	Comments  Comments  `yaml:"comments"`
 	Languages Languages `yaml:"languages"`
 	Exclude   []string  `yaml:"exclude,omitempty"`
+	Baseline  string    `yaml:"baseline,omitempty"`
 	Rules     Rules     `yaml:"rules"`
 
 	Path string `yaml:"-"` // откуда прочитан, пусто если настроек нет

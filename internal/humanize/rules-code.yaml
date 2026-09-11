@@ -68,8 +68,10 @@ categories:
   - name: Учебный тон в комментарии
     fix: Комментарий не урок - убери обращение к читателю
     rules:
-      - name: as you can see / let's / we need to
-        word_re: '(?:as\s+you\s+can\s+see|let\x27s\s+\p{L}+|we\s+(?:need\s+to|will|want\s+to)|now\s+we|first,?\s+we|note\s+that|keep\s+in\s+mind|for\s+demonstration)'
+      # "we need to" и "we will" убраны: в замере на LLMTrace учебный тон дал
+      # lift 0.79, то есть у человека он чаще. Остались обращения к читателю.
+      - name: as you can see / let's / for demonstration
+        word_re: '(?:as\s+you\s+can\s+see|let\x27s\s+\p{L}+|note\s+that|keep\s+in\s+mind|for\s+demonstration|in\s+this\s+example)'
       - name: как видно / давайте / обратите внимание
         word_re: '(?:как\s+вид(?:но|им)|давайте|теперь\s+мы|сначала\s+мы|обрати(?:те)?\s+внимание|как\s+мы\s+пом?ним)'
 

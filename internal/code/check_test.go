@@ -1,12 +1,13 @@
 package code
 
 import (
-	"github.com/haiodo/hum1izer/internal/humanize"
-
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/haiodo/hum1izer/internal/humanize"
 )
 
 func extract(t *testing.T, name, body string) []Comment {
@@ -100,6 +101,7 @@ func TestStructChecks(t *testing.T) {
 		{"код", Comment{Lines: 3, Text: "if (x) {\n  doIt();\n}"}, "Закомментированный код"},
 		{"todo", Comment{Lines: 1, Text: "TODO: починить"}, "TODO без владельца"},
 		{"ченджлог", Comment{Lines: 1, Text: "Updated parser to support v2"}, "Ченджлог в комментарии"},
+		{"автор", Comment{Lines: 1, Text: "Author: кто-то"}, "Ченджлог в комментарии"},
 		{"эссе", Comment{Lines: 3, Text: "## Как это работает\n\nтекст"}, "Markdown-эссе в комментарии"},
 		{"шаги", Comment{Lines: 2, Text: "- Step 1: validate\n- Step 2: persist"}, "Пошаговая инструкция"},
 	}
@@ -107,6 +109,10 @@ func TestStructChecks(t *testing.T) {
 		if !hasRule(structChecks(2, c.c), c.want) {
 			t.Errorf("%s: правило %q не сработало", c.name, c.want)
 		}
+	}
+	// Описание операции в JSDoc - не ченджлог.
+	if hasRule(structChecks(12, Comment{Lines: 1, Text: "Update a top-level document by id"}), "Ченджлог в комментарии") {
+		t.Error("описание операции принято за ченджлог")
 	}
 	// TODO со ссылкой на задачу - законный.
 	if hasRule(structChecks(2, Comment{Lines: 1, Text: "TODO(haiodo): починить"}), "TODO без владельца") {
@@ -278,5 +284,56 @@ func TestRawKeepsMarkers(t *testing.T) {
 	got := extract(t, "a.go", src)
 	if len(got) != 1 || got[0].Raw != "// раз\n// два" {
 		t.Fatalf("raw = %q", got[0].Raw)
+	}
+}
+
+func TestLicenseHeaderSkipped(t *testing.T) {
+	lic := Comment{Start: 1, Lines: 4, Text: "Copyright (c) 2026 Someone\n\nLicensed under the Apache License, Version 2.0\nyou may not use this file except in compliance"}
+	if !isLicenseHeader(lic) {
+		t.Error("лицензионная шапка не распознана")
+	}
+	if !isLicenseHeader(Comment{Start: 40, Lines: 1, Text: "SPDX-License-Identifier: MIT"}) {
+		t.Error("SPDX не распознан вне начала файла")
+	}
+	// Обычный комментарий про лицензии в середине файла глушить нельзя.
+	if isLicenseHeader(Comment{Start: 120, Lines: 3, Text: "тут проверяем copyright у загруженного файла\nи пишем в лог\nесли его нет"}) {
+		t.Error("обычный комментарий принят за лицензионную шапку")
+	}
+}
+
+func TestWalkRespectsGitignore(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git недоступен: %v %s", err, out)
+		}
+	}
+	run("init", "-q")
+	write := func(name, body string) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".gitignore", "lib/\n")
+	write("src/a.ts", "// комментарий\nexport const a = 1;\n")
+	write("lib/a.js", "// собранное\nexport const a = 1;\n")
+
+	got, err := WalkCode(dir, Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "src/a.ts") {
+		t.Errorf("исходник не найден: %v", got)
+	}
+	if strings.Contains(joined, "lib/a.js") {
+		t.Errorf("игнорируемый файл попал в обход: %v", got)
 	}
 }

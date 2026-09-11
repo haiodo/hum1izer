@@ -41,10 +41,19 @@ func (c Comment) ID() string {
 var skipDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, "dist": true, "build": true,
 	"bin": true, "gen": true, "coverage": true, "testdata": true, ".svelte-kit": true,
-	".next": true, "target": true, "Pods": true, ".reports": true,
+	".next": true, "target": true, "Pods": true, ".reports": true, "bundle": true,
+	".rollup.cache": true, "__pycache__": true,
 }
 
-var generatedRe = regexp.MustCompile(`(?m)^(//|#|/\*) *Code generated .* DO NOT EDIT|@generated|eslint-disable`)
+var generatedRe = regexp.MustCompile(`(?m)^(//|#|/\*) *Code generated .* DO NOT EDIT|@generated|eslint-disable|sourceMappingURL=`)
+
+// isGenerated: маркеры стоят либо в шапке, либо в самом конце
+// (sourceMappingURL у собранного JS), середину файла смотреть незачем.
+func isGenerated(src []byte) bool {
+	head := src[:minInt(len(src), 2048)]
+	tail := src[max(0, len(src)-1024):]
+	return generatedRe.Match(head) || generatedRe.Match(tail)
+}
 
 // Filter - что из дерева брать. Пустой Filter означает все поддерживаемые языки.
 type Filter struct {
@@ -62,7 +71,8 @@ func (f Filter) allow(root, path string) bool {
 		return false
 	}
 	name := filepath.Base(path)
-	if strings.HasSuffix(name, ".d.ts") || strings.HasSuffix(name, ".pb.go") {
+	if strings.HasSuffix(name, ".d.ts") || strings.HasSuffix(name, ".pb.go") ||
+		strings.HasSuffix(name, ".min.js") || strings.HasSuffix(name, ".bundle.js") {
 		return false
 	}
 	if f.SkipTests && (strings.HasSuffix(name, "_test.go") ||
@@ -83,6 +93,9 @@ func (f Filter) allow(root, path string) bool {
 }
 
 // WalkCode собирает файлы с поддерживаемыми расширениями. Файл передаётся как есть.
+// В git-репозитории список берётся у самого git: так .gitignore соблюдается
+// точно, включая вложенные и глобальные правила, и собранный код в lib/ или
+// bundle/ не попадает под проверку.
 func WalkCode(root string, f Filter) ([]string, error) {
 	st, err := os.Stat(root)
 	if err != nil {
@@ -90,6 +103,9 @@ func WalkCode(root string, f Filter) ([]string, error) {
 	}
 	if !st.IsDir() {
 		return []string{root}, nil
+	}
+	if out, ok := gitFiles(root, f); ok {
+		return out, nil
 	}
 	var out []string
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -118,7 +134,7 @@ func ExtractComments(path string) ([]Comment, error) {
 	if err != nil {
 		return nil, err
 	}
-	if generatedRe.Match(src[:min(len(src), 2048)]) {
+	if isGenerated(src) {
 		return nil, nil
 	}
 	lines := strings.Split(string(src), "\n")
@@ -440,6 +456,40 @@ func GitCommits(dir string, limit int) ([]Comment, error) {
 		})
 	}
 	return res, nil
+}
+
+// gitFiles: отслеживаемые и неотслеживаемые файлы за вычетом игнорируемых.
+// Пути git отдаёт относительно каталога запуска. Не git или git не найден -
+// возвращаем false, и обход идёт обычным способом.
+func gitFiles(root string, f Filter) ([]string, bool) {
+	cmd := exec.Command("git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	buf, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+	var out []string
+	for _, rel := range strings.Split(string(buf), "\x00") {
+		if rel == "" {
+			continue
+		}
+		path := filepath.Join(root, rel)
+		if skippedDir(rel) || !f.allow(root, path) {
+			continue
+		}
+		out = append(out, path)
+	}
+	return out, true
+}
+
+// skippedDir: git отдаёт и то, что лежит в vendor или testdata и при этом
+// закоммичено. Эти каталоги пропускаем так же, как при обычном обходе.
+func skippedDir(rel string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		if skipDirs[part] {
+			return true
+		}
+	}
+	return false
 }
 
 func isGitRepo(dir string) bool {

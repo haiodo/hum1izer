@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/haiodo/hum1izer/internal/baseline"
 	"github.com/haiodo/hum1izer/internal/humanize"
 )
 
@@ -37,6 +38,9 @@ func CheckComment(cs CodeSets, c Comment, genre string) []Finding {
 	if humanize.CyrillicShare(c.Text) >= 0.3 {
 		prose = cs.RU
 	}
+	if isLicenseHeader(c) {
+		return nil
+	}
 	var out []Finding
 	for _, rs := range []*humanize.RuleSet{prose, cs.Code} {
 		if rs == nil {
@@ -48,6 +52,22 @@ func CheckComment(cs CodeSets, c Comment, genre string) []Finding {
 		return append(out, commitChecks(c)...)
 	}
 	return append(out, structChecks(cs.MaxLines, c)...)
+}
+
+var (
+	spdxRe    = regexp.MustCompile(`SPDX-License-Identifier`)
+	licenseRe = regexp.MustCompile(`(?i)copyright|©|licen[cs]ed under|licen[cs]e,? version|` +
+		`all rights reserved|под лицензией`)
+)
+
+// isLicenseHeader: шапку с лицензией никто не редактирует, и проверять её
+// незачем. SPDX считается признаком где угодно, остальное - только в начале
+// файла, чтобы не глушить разбор слова "лицензия" в обычном комментарии.
+func isLicenseHeader(c Comment) bool {
+	if spdxRe.MatchString(c.Text) {
+		return true
+	}
+	return c.Start <= 5 && c.Lines >= 3 && licenseRe.MatchString(c.Text)
 }
 
 func ruleFindings(rs *humanize.RuleSet, c Comment, genre string) []Finding {
@@ -88,9 +108,11 @@ var (
 	todoRe   = regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX)\b`)
 	ownerRe  = regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX)\b\s*[(\[]|` +
 		`(?i)(https?://|#\d+|[A-Z]+-\d+|@[a-z][\w.-]+)`)
-	changelogRe = regexp.MustCompile(`(?i)(^|\n)\s*(updated?|changed?|added|removed|renamed|refactored|migrated)\b.{0,60}\b(to|from|in)\b|` +
-		`(?i)\b(author|created|modified|last updated|дата|автор)\s*:|` +
-		`\b(19|20)\d\d[-/.]\d\d[-/.]\d\d\b`)
+	// Ченджлог - это событие с датой или версией. Без них "Update a document"
+	// из JSDoc уходит в ложные: там Update это название операции, не история.
+	changelogRe = regexp.MustCompile(`(?i)\b(author|created|modified|last updated|дата|автор)\s*:|` +
+		`\b(19|20)\d\d[-/.]\d\d[-/.]\d\d\b|` +
+		`(?im)^\s*[-*]?\s*(updated?|changed?|added|removed|renamed|fixed|изменено|добавлено|удалено)\b[^\n]{0,60}\b(v\d+(\.\d+)?|\d+\.\d+|\d{4})\b`)
 	mdHeadRe   = regexp.MustCompile(`(?m)^\s*#{1,6}\s+\S`)
 	mdBulletRe = regexp.MustCompile(`(?m)^\s*(?:[-*+]|\d+[.)])\s+\S`)
 	stepRe     = regexp.MustCompile(`(?i)(?m)^\s*(?:[-*+]|\d+[.)])?\s*(step|шаг)\s*\d+\s*[:.)]`)
@@ -335,6 +357,7 @@ func SortFindings(f []Finding) {
 // после первой же правки уезжают.
 type Item struct {
 	ID       string        `json:"id"`
+	Hash     string        `json:"hash"`
 	File     string        `json:"file"`
 	Start    int           `json:"start"`
 	End      int           `json:"end"`
@@ -362,8 +385,8 @@ func NewItem(c Comment, f []Finding) Item {
 	if c.Lang == "git" {
 		kind = "commit"
 	}
-	it := Item{ID: c.ID(), File: c.File, Start: c.Start, End: c.End,
-		Lang: c.Lang, Kind: kind, Raw: c.Raw}
+	it := Item{ID: c.ID(), Hash: baseline.Hash(c.Text), File: c.File,
+		Start: c.Start, End: c.End, Lang: c.Lang, Kind: kind, Raw: c.Raw}
 	seen := map[string]bool{}
 	for _, x := range f {
 		key := fmt.Sprintf("%s:%d", x.Rule, x.Line)
