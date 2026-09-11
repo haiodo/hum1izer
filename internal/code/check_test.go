@@ -201,10 +201,10 @@ func TestLiftReachesFinding(t *testing.T) {
 	}
 	cs.EN = cs.RU
 	f := CheckComment(cs, Comment{File: "a.go", Start: 1, Lines: 1,
-		Text: "Кэш играет ключевую роль"}, "code")
+		Text: "Это не просто кэш, а целый слой"}, "code")
 	for _, x := range f {
-		if x.Rule == "Играет важную/ключевую роль" {
-			if x.Lift < 9 {
+		if x.Rule == "Не просто X, а Y" {
+			if x.Lift < 8 {
 				t.Errorf("lift не доехал до находки: %v", x.Lift)
 			}
 			return

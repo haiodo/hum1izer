@@ -46,12 +46,14 @@ hard_bans:
     re: '(?:^|\n\s*(?:[-*•]\s*)?)(?:in\s+conclusion|to\s+sum\s+up|overall)\s*,'
   - name: 'Not just X, but Y'
     fix: 'State the claim directly; keep only Y.'
+    lift: 6.1
     re: 'not\s+just[^.!?\n]{1,40}?\bbut\b'
   - name: "Isn't just X, it's Y"
     fix: 'State the claim directly; keep only Y.'
     re: 'isn.t\s+just[^.!?\n]{1,40}?it.s\b'
   - name: 'A testament to'
     fix: "Name the specific cause instead of calling it a 'testament'."
+    lift: 10.0
     word_re: 'a\s+testament\s+to'
   - name: 'Navigate the complexities/landscape'
     fix: "Name the actual problem instead of a vague 'landscape'."
@@ -70,9 +72,11 @@ hard_bans:
     word_re: 'plays?\s+an?\s+(?:crucial|vital|pivotal|key|important)\s+role'
   - name: 'Serves as a'
     fix: "Say what it does, not what it 'serves as'."
+    lift: 10.5
     word_re: 'serves?\s+as\s+an?'
   - name: 'Em dash'
     fix: 'Use a comma, colon, period, or hyphen; or restructure the sentence.'
+    lift: 1.7
     re: '—'
   - name: 'En dash'
     fix: "Legitimate only in numeric ranges; use 'to' or a hyphen otherwise."
@@ -102,6 +106,7 @@ hard_bans:
 categories:
   - name: 'Corporate adjectives'
     fix: 'Cut the corporate adjective or name what actually changed.'
+    lift: 5.2
     rules:
       - lit: robust
       - name: seamless(ly)
@@ -120,6 +125,7 @@ categories:
 
   - name: 'Latinate verbs'
     fix: 'Use the plain verb: use, ease, simplify, run, push, come up with.'
+    lift: 2.8
     rules:
       - lit: utilize
       - lit: leverage
@@ -131,6 +137,7 @@ categories:
 
   - name: 'Overused transitions'
     fix: 'Cut the transition or replace it with the actual logical link.'
+    lift: 3.0
     rules:
       - lit: furthermore
       - lit: moreover
@@ -141,6 +148,7 @@ categories:
 
   - name: 'Empty intensifiers'
     fix: 'Cut the intensifier; let the evidence carry the weight.'
+    lift: 4.1
     rules:
       - lit: truly
       - lit: incredibly
@@ -190,6 +198,7 @@ categories:
 
   - name: 'Formulaic essay structure'
     fix: 'Cut the essay scaffolding; let the structure show through the content.'
+    lift: 4.4
     rules:
       - name: firstly/secondly/thirdly
         word_re: 'firstly|secondly|thirdly'
@@ -200,6 +209,7 @@ categories:
 
   - name: 'Marketing cliches'
     fix: 'Name the actual change instead of the marketing verb.'
+    lift: 6.1
     rules:
       - lit: revolutioniz
       - lit: transform the way
@@ -210,6 +220,7 @@ categories:
 
   - name: 'Hollow significance'
     fix: 'Cut the filler adjective or name the specific stake.'
+    lift: 7.5
     rules:
       - lit: crucial
       - lit: vital
@@ -249,6 +260,7 @@ categories:
 
   - name: 'Not only ... but also'
     fix: '"X. And Y." or a plain list.'
+    lift: 12.5
     rules:
       - name: not only X but also Y
         re: 'not\s+only[^.!?\n]{1,40}?but\s+also'
