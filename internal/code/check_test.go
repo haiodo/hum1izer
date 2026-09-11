@@ -379,3 +379,23 @@ func TestLongCommentLine(t *testing.T) {
 		t.Error("короткая строка принята за длинную")
 	}
 }
+
+func TestCommentedOutCodeTS(t *testing.T) {
+	cases := []struct {
+		name, lang, text string
+		want             bool
+	}{
+		{"настоящий код", "ts", "if (err) {\n  return null;\n}", true},
+		{"типы TypeScript", "ts", "export function f(a: number): string { return String(a) }", true},
+		{"вызов с объектом", "js", "logger.info(\"ros2: publishing\", { id: cfg.id });", true},
+		{"проза со скобками", "ts", "счётчик сбрасывается, когда очередь пустеет (см. reset)", false},
+		{"английская проза", "ts", "the query fires on every update to this item, due date included", false},
+		{"проза с дефисом", "ts", "Normalizes audio samples to target RMS while preserving dynamics", false},
+	}
+	for _, c := range cases {
+		got := commentedOutCode(c.lang, c.text, strings.Split(c.text, "\n")) != ""
+		if got != c.want {
+			t.Errorf("%s (%s): %v, ожидалось %v", c.name, c.lang, got, c.want)
+		}
+	}
+}

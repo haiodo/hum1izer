@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/evanw/esbuild/pkg/api"
+
 	"github.com/haiodo/hum1izer/internal/baseline"
 	"github.com/haiodo/hum1izer/internal/humanize"
 )
@@ -201,8 +203,8 @@ func commentedOutCode(lang, text string, lines []string) string {
 	if n == 0 {
 		return ""
 	}
-	if lang == "go" {
-		if parsesAsGo(text) {
+	if parser, ok := parsers[lang]; ok {
+		if parser(text) {
 			return fmt.Sprintf("разбирается как код: %d из %d строк", n, len(lines))
 		}
 		return ""
@@ -211,6 +213,29 @@ func commentedOutCode(lang, text string, lines []string) string {
 		return fmt.Sprintf("%d из %d строк похожи на код", n, len(lines))
 	}
 	return ""
+}
+
+// parsers: языки, для которых есть настоящий разбор. Для Swift парсера нет,
+// там остаётся доля строк, похожих на код.
+var parsers = map[string]func(string) bool{
+	"go":     parsesAsGo,
+	"ts":     parsesAsJS(api.LoaderTS),
+	"tsx":    parsesAsJS(api.LoaderTSX),
+	"js":     parsesAsJS(api.LoaderJS),
+	"jsx":    parsesAsJS(api.LoaderJSX),
+	"mjs":    parsesAsJS(api.LoaderJS),
+	"cjs":    parsesAsJS(api.LoaderJS),
+	"svelte": parsesAsJS(api.LoaderTS),
+}
+
+// parsesAsJS: esbuild разбирает тело комментария как исходник. Ошибок нет -
+// значит код. Своего парсера TS в stdlib нет, а тащить typescript-go нельзя:
+// его пакеты лежат под internal.
+func parsesAsJS(loader api.Loader) func(string) bool {
+	return func(text string) bool {
+		r := api.Transform(text, api.TransformOptions{Loader: loader, LogLevel: api.LogLevelSilent})
+		return len(r.Errors) == 0
+	}
 }
 
 // parsesAsGo: тело комментария подставляется в функцию и отдаётся go/parser.
