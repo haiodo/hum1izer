@@ -182,13 +182,18 @@ func runText(args []string, rulesPath, lang, genre, format string, top int) int 
 			fmt.Printf("%s: текст пуст, сканировать нечего\n", src)
 			continue
 		}
+		if isMarkup(src) {
+			text = humanize.StripMarkup(text)
+		}
 		rep := humanize.Analyze(rs, text, genre)
 		switch format {
 		case "json", "jsonl":
 			printJSON(src, rep)
 		case "quiet":
-			fmt.Printf("%-40s %3d/100 [%s] банов: %d, маркеров: %d\n",
-				src, rep.Score.Value, rep.Score.Band, countHits(rep.HardBans), countHits(rep.Markers))
+			phrases, dashes := splitBans(rep.HardBans)
+			fmt.Printf("%-40s %3d/100 [%s] банов: %d (+%d тире), маркеров: %.1f/100 слов\n",
+				src, rep.Score.Value, rep.Score.Band, phrases, dashes,
+				per100(countHits(rep.Markers), rep.Rhythm.Words))
 		default:
 			printReport(rs, src, rep, top)
 		}
@@ -410,6 +415,22 @@ func allowed(cfg config.Config, f []code.Finding) []code.Finding {
 		}
 	}
 	return out
+}
+
+func per100(n, words int) float64 {
+	if words == 0 {
+		return 0
+	}
+	return float64(n) / float64(words) * 100
+}
+
+// isMarkup: у markdown и mdx гасим код и разметку. Для txt и stdin не гадаем.
+func isMarkup(src string) bool {
+	switch strings.ToLower(filepath.Ext(src)) {
+	case ".md", ".mdx", ".markdown":
+		return true
+	}
+	return false
 }
 
 func read(src string) (string, error) {

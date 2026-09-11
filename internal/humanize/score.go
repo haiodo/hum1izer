@@ -166,8 +166,10 @@ func roundInt(v float64) int {
 	return int(v + 0.5)
 }
 
-// MarkerVerdict — шкала из SKILL.md: 0-2 чисто, 3-5 подозрительно, 6+ AI.
-func MarkerVerdict(rs *RuleSet, hits []Hit) string {
+// MarkerVerdict - плотность маркеров, а не вердикт об авторстве. Абсолютный
+// счёт из оригинала на длинном тексте всегда давал "AI": семь маркеров на
+// тысячу слов и семь на сотню - разные вещи. Полосы здесь свои, не измеренные.
+func MarkerVerdict(rs *RuleSet, hits []Hit, words int) string {
 	total := 0
 	for _, h := range hits {
 		if h.Category == rs.CopyPasteCategory {
@@ -175,12 +177,16 @@ func MarkerVerdict(rs *RuleSet, hits []Hit) string {
 		}
 		total += h.Count
 	}
+	if total == 0 {
+		return "0 — ни одного"
+	}
+	d := per100(total, words)
 	switch {
-	case total <= 2:
-		return fmt.Sprintf("%d — скорее всего чистый текст", total)
-	case total <= 5:
-		return fmt.Sprintf("%d — подозрительно", total)
+	case d < 1.0:
+		return fmt.Sprintf("%d (%.1f на 100 слов) — в пределах обычного", total, d)
+	case d < 3.0:
+		return fmt.Sprintf("%d (%.1f на 100 слов) — плотность повышена, стоит посмотреть", total, d)
 	default:
-		return fmt.Sprintf("%d — AI-генерация с высокой вероятностью", total)
+		return fmt.Sprintf("%d (%.1f на 100 слов) — плотность высокая, текст просится на правку", total, d)
 	}
 }

@@ -23,6 +23,19 @@ func countHits(hits []humanize.Hit) int {
 	return n
 }
 
+// splitBans: тире считается отдельно. В балл оно идёт по плотности с допуском,
+// поэтому "банов: 72" рядом с "87/100 чисто" читалось как противоречие.
+func splitBans(hits []humanize.Hit) (phrases, dashes int) {
+	for _, h := range hits {
+		if strings.Contains(h.Marker, "тире") {
+			dashes += h.Count
+			continue
+		}
+		phrases += h.Count
+	}
+	return
+}
+
 func printJSON(src string, rep humanize.Report) {
 	out := struct {
 		Source string `json:"source"`
@@ -69,7 +82,7 @@ func printReport(rs *humanize.RuleSet, src string, rep humanize.Report, top int)
 	}
 	fmt.Println()
 
-	fmt.Printf("МАРКЕРЫ: %s\n", humanize.MarkerVerdict(rs, rep.Markers))
+	fmt.Printf("МАРКЕРЫ: %s\n", humanize.MarkerVerdict(rs, rep.Markers, rep.Rhythm.Words))
 	sorted := slices.Clone(rep.Markers)
 	slices.SortStableFunc(sorted, func(a, b humanize.Hit) int { return b.Count - a.Count })
 	shown := sorted
