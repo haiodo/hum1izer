@@ -30,7 +30,7 @@ make install                                                # в GOBIN
 ## Скиллы для агентов
 
 ```bash
-hum1izer install --claude --codex --hermes --pi
+hum1izer install --claude --codex --opencode --hermes --pi
 hum1izer install --all              # все сразу
 hum1izer install --claude --dir .   # в проект, а не в домашний каталог
 hum1izer install --print            # посмотреть SKILL.md, ничего не ставя
@@ -44,9 +44,14 @@ make skills                         # собрать и поставить вс�
 |---|---|
 | `--claude` | `~/.claude/skills/hum1izer/SKILL.md` |
 | `--codex` | `~/.codex/skills/hum1izer/SKILL.md` |
+| `--opencode` | `~/.config/opencode/skill/hum1izer/SKILL.md` |
 | `--hermes` | `~/.hermes/skills/devops/hum1izer/SKILL.md` |
 | `--pi` | `~/.pi/agent/skills/hum1izer/SKILL.md` |
 | `--agents` | `~/.agents/skills/hum1izer/SKILL.md` |
+
+opencode читает ещё и `~/.claude/skills` с `~/.agents/skills`, так что ему
+хватит и `--claude`, и `--agents` - отдельный флаг нужен, только если хочется
+держать скилл в его собственном каталоге.
 
 Существующий файл не перезаписывается без `--force`. Скилл описывает цикл
 правки, правила хорошего комментария и список того, что трогать нельзя:

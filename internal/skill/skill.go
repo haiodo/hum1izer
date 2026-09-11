@@ -51,6 +51,11 @@ metadata:
   hermes:
     tags: [code-quality, writing, comments, review]
 ---`},
+	{Flag: "opencode", Agent: "opencode", Dir: ".config/opencode/skill/" + name, frontMatter: `---
+name: ` + name + `
+description: "` + description + `"
+license: MIT
+---`},
 	{Flag: "pi", Agent: "pi", Dir: ".pi/agent/skills/" + name, frontMatter: `---
 name: ` + name + `
 description: "` + description + `"
@@ -73,9 +78,11 @@ const usage = `hum1izer install - поставить скилл для аген�
 Агенты:
   --claude   ~/.claude/skills/hum1izer/SKILL.md
   --codex    ~/.codex/skills/hum1izer/SKILL.md
+  --opencode ~/.config/opencode/skill/hum1izer/SKILL.md
   --hermes   ~/.hermes/skills/devops/hum1izer/SKILL.md
   --pi       ~/.pi/agent/skills/hum1izer/SKILL.md
   --agents   ~/.agents/skills/hum1izer/SKILL.md
+             opencode читает и этот каталог, и ~/.claude/skills
 
 Прочее:
   --all      все агенты сразу
