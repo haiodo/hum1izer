@@ -3,6 +3,7 @@ package humanize
 import (
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -26,6 +27,8 @@ type Rhythm struct {
 	CVLen       float64 `json:"cv_len"`
 	MinLen      int     `json:"min_len"`
 	MaxLen      int     `json:"max_len"`
+	MeanWordLen float64 `json:"mean_word_len"`
+	LongWords   float64 `json:"long_word_share"`
 	EmDash      int     `json:"em_dash"`
 	Ellipsis    int     `json:"ellipsis"`
 	Parentheses int     `json:"parentheses"`
@@ -42,13 +45,22 @@ type Morph struct {
 
 // Structure — метрики уровня документа.
 type Structure struct {
-	Paragraphs      int     `json:"paragraphs"`
-	ParaMeanSent    float64 `json:"para_mean_sent"`
-	ParaCV          float64 `json:"para_cv"`
-	ListItems       int     `json:"list_items"`
-	ListicleShare   float64 `json:"listicle_share"`
-	TitleCaseHeads  int     `json:"title_case_headings"`
-	TruncatedEnding bool    `json:"truncated_ending"`
+	Paragraphs      int      `json:"paragraphs"`
+	ParaMeanSent    float64  `json:"para_mean_sent"`
+	ParaCV          float64  `json:"para_cv"`
+	ListItems       int      `json:"list_items"`
+	ListicleShare   float64  `json:"listicle_share"`
+	TitleCaseHeads  int      `json:"title_case_headings"`
+	TruncatedEnding bool     `json:"truncated_ending"`
+	RepeatPer1000   float64  `json:"repeat_per_1000"`
+	Repeats         []Repeat `json:"repeats,omitempty"`
+}
+
+// Repeat - трёхсловие, повторённое в тексте. Повтор одной и той же формулировки
+// три раза и больше - дефект письма независимо от того, кто писал.
+type Repeat struct {
+	Phrase string `json:"phrase"`
+	Count  int    `json:"count"`
 }
 
 // Report — всё, что посчитано по тексту.
@@ -203,6 +215,8 @@ func rhythm(text string) Rhythm {
 	}
 	r := Rhythm{
 		Sentences:   len(lens),
+		MeanWordLen: meanWordLen(text),
+		LongWords:   longWordShare(text),
 		EmDash:      strings.Count(text, "—"),
 		Ellipsis:    strings.Count(text, "…") + strings.Count(text, "..."),
 		Parentheses: strings.Count(text, "("),
@@ -233,6 +247,40 @@ func rhythm(text string) Rhythm {
 		r.CVLen = round(math.Sqrt(variance/float64(len(lens)))/mean, 3)
 	}
 	return r
+}
+
+// meanWordLen и longWordShare - средняя длина слова и доля слов от 10 букв.
+// В работе PNAS (arXiv 2410.16107) средняя длина слова идёт третьей по
+// важности среди 66 признаков Байбера: у GPT-моделей 114-116% от человеческой.
+// Признак языконезависимый и считается без морфоанализатора.
+// ponytail: потолок - длина слова растёт и от регистра, корпоративный текст
+// длиннее технической заметки независимо от автора. Поэтому в балл не идёт.
+func meanWordLen(text string) float64 {
+	words := Words(text)
+	if len(words) == 0 {
+		return 0
+	}
+	sum := 0
+	for _, w := range words {
+		sum += len([]rune(w))
+	}
+	return round(float64(sum)/float64(len(words)), 2)
+}
+
+const longWordRunes = 10
+
+func longWordShare(text string) float64 {
+	words := Words(text)
+	if len(words) == 0 {
+		return 0
+	}
+	n := 0
+	for _, w := range words {
+		if len([]rune(w)) >= longWordRunes {
+			n++
+		}
+	}
+	return round(float64(n)/float64(len(words))*100, 1)
 }
 
 // --- морфология -----------------------------------------------------------
@@ -329,7 +377,56 @@ func structure(text string) Structure {
 	}
 	s.TitleCaseHeads = countTitleCaseHeadings(text)
 	s.TruncatedEnding = isTruncated(lines)
+	s.Repeats, s.RepeatPer1000 = repeatedPhrases(text, repeatMin)
 	return s
+}
+
+// repeatMin - со скольких повторов трёхсловие считается повтором. Порог из
+// Not-Ai; своего замера на корпусе пока нет, поэтому в балл это не идёт.
+const repeatMin = 3
+
+// repeatedPhrases: трёхсловия, встретившиеся min раз и чаще. Сочетания из одних
+// служебных слов не считаются - "и в то" повторяется у кого угодно.
+func repeatedPhrases(text string, min int) ([]Repeat, float64) {
+	words := Words(strings.ToLower(text))
+	if len(words) < 3 {
+		return nil, 0
+	}
+	counts := map[string]int{}
+	for i := 0; i+2 < len(words); i++ {
+		g := words[i : i+3]
+		if allStop(g) {
+			continue
+		}
+		counts[strings.Join(g, " ")]++
+	}
+	var out []Repeat
+	for p, n := range counts {
+		if n >= min {
+			out = append(out, Repeat{p, n})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Phrase < out[j].Phrase
+	})
+	return out, round(float64(len(out))/float64(len(words))*1000, 2)
+}
+
+var phraseStop = ToSet([]string{"и", "в", "на", "с", "по", "для", "что", "это", "не", "а",
+	"но", "или", "к", "у", "из", "о", "за", "от", "то", "же", "как", "бы", "все", "так",
+	"the", "a", "an", "of", "in", "to", "is", "are", "and", "or", "but", "for", "that",
+	"this", "it", "on", "at", "by", "as", "with", "from", "be", "was", "were"})
+
+func allStop(words []string) bool {
+	for _, w := range words {
+		if !phraseStop[w] {
+			return false
+		}
+	}
+	return true
 }
 
 // countTitleCaseHeadings: «Ранняя Жизнь и Образование» — калька с английского.

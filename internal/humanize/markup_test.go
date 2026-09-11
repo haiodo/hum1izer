@@ -48,3 +48,39 @@ func TestStripMarkupLinkTextSurvives(t *testing.T) {
 		t.Errorf("адрес ссылки остался: %q", got)
 	}
 }
+
+func TestRepeatedPhrases(t *testing.T) {
+	text := strings.Repeat("система управления проектами помогает команде. ", 4) +
+		"Больше ничего тут не повторяется, каждое слово своё, ритм другой."
+	r, rate := repeatedPhrases(text, 3)
+	if len(r) == 0 {
+		t.Fatal("повтор трёхсловия не пойман")
+	}
+	if r[0].Count < 4 {
+		t.Errorf("счёт повтора: %d", r[0].Count)
+	}
+	if rate <= 0 {
+		t.Error("плотность повторов не посчитана")
+	}
+	// Сочетание из одних служебных слов повтором не считается.
+	only, _ := repeatedPhrases(strings.Repeat("и в то же ", 10), 3)
+	for _, x := range only {
+		if allStop(strings.Fields(x.Phrase)) {
+			t.Errorf("служебное трёхсловие попало в повторы: %q", x.Phrase)
+		}
+	}
+}
+
+func TestWordLengthMetrics(t *testing.T) {
+	short := "я шёл в дом и пел"
+	long := "автоматизированное планирование ресурсопотребления обеспечивается администрированием"
+	if meanWordLen(short) >= meanWordLen(long) {
+		t.Errorf("средняя длина не разделяет: %v против %v", meanWordLen(short), meanWordLen(long))
+	}
+	if longWordShare(short) != 0 {
+		t.Errorf("в коротком тексте нашлись длинные слова: %v", longWordShare(short))
+	}
+	if longWordShare(long) != 100 {
+		t.Errorf("доля длинных слов: %v, ожидалось 100", longWordShare(long))
+	}
+}

@@ -115,6 +115,8 @@ func printReport(rs *humanize.RuleSet, src string, rep humanize.Report, top int)
 		r.Sentences, r.MeanLen, r.MinLen, r.MaxLen)
 	fmt.Printf("  слов: %d, тире: %d, многоточий: %d, скобок: %d, вопросов: %d\n",
 		r.Words, r.EmDash, r.Ellipsis, r.Parentheses, r.Questions)
+	fmt.Printf("  средняя длина слова: %.2f, слов от 10 букв: %.1f%%\n",
+		r.MeanWordLen, r.LongWords)
 	fmt.Println()
 
 	fmt.Println("НОМИНАЛЬНОСТЬ:")
@@ -144,6 +146,17 @@ func printReport(rs *humanize.RuleSet, src string, rep humanize.Report, top int)
 	}
 	if st.TruncatedEnding {
 		fmt.Println("  ⚠ текст оборван на полуслове → допиши финал")
+	}
+	if len(st.Repeats) > 0 {
+		fmt.Printf("  ⚠ повторов трёхсловий: %d (%.1f на 1000 слов) → переформулируй\n",
+			len(st.Repeats), st.RepeatPer1000)
+		for i, r := range st.Repeats {
+			if i >= 5 {
+				fmt.Printf("     … и ещё %d\n", len(st.Repeats)-i)
+				break
+			}
+			fmt.Printf("     «%s» ×%d\n", r.Phrase, r.Count)
+		}
 	}
 	fmt.Println()
 }
