@@ -357,7 +357,7 @@ func TestWalkRespectsGitignore(t *testing.T) {
 }
 
 func TestPackageDocNotTooLong(t *testing.T) {
-	doc := Comment{Lines: 6, Text: "Package code разбирает комментарии.\n\nПодробности тут.",
+	doc := Comment{Lines: 6, Text: "Package code разбирает комментарии.\nПодробности тут.\nИ ещё строка.",
 		Next: "package code"}
 	if hasRule(structChecks(2, 0, doc), "Длинный комментарий") {
 		t.Error("пакетная документация оштрафована за длину")
@@ -442,5 +442,49 @@ func TestKotlinLangDetected(t *testing.T) {
 		if len(got) == 0 || got[0].Lang != want {
 			t.Errorf("%s: язык %q, ожидался %q", name, got[0].Lang, want)
 		}
+	}
+}
+
+func TestDocLeadKeepsGodocConvention(t *testing.T) {
+	cs := CodeSets{MaxLines: 2, MaxLineLen: 100}
+	var err error
+	if cs.EN, err = humanize.LoadBuiltin("en"); err != nil {
+		t.Fatal(err)
+	}
+	if cs.Code, err = humanize.LoadBuiltin("code"); err != nil {
+		t.Fatal(err)
+	}
+
+	godoc := CheckComment(cs, Comment{File: "a.go", Start: 1, Lines: 1,
+		Text: "Chunk represents a chunk of raw data", Next: "type Chunk struct {"}, "code")
+	if hasRule(godoc, "represents a/an") {
+		t.Error("godoc-конвенция поймана как копула")
+	}
+
+	jsdoc := CheckComment(cs, Comment{File: "a.ts", Start: 1, Lines: 1, Doc: true,
+		Text: "Represents a relationship between two rows"}, "code")
+	if hasRule(jsdoc, "represents a/an") {
+		t.Error("JSDoc-конвенция поймана как копула")
+	}
+
+	prose := CheckComment(cs, Comment{File: "a.go", Start: 1, Lines: 1,
+		Text: "This represents a shift in how we handle retries", Next: "x := 1"}, "code")
+	if !hasRule(prose, "represents a/an") {
+		t.Error("копула в обычном комментарии пропущена")
+	}
+}
+
+func TestLengthCountsProseOnly(t *testing.T) {
+	jsdoc := Comment{Lines: 5, Text: "Sends a message.\n@param to - recipient\n@param body - text\n@returns id", Next: "function send() {"}
+	if hasRule(structChecks(2, 100, jsdoc), "Длинный комментарий") {
+		t.Error("блок из тегов JSDoc оштрафован за длину")
+	}
+	prose := Comment{Lines: 4, Text: "Первая строка.\nВторая строка.\nТретья строка.", Next: "func f() {"}
+	if !hasRule(structChecks(2, 100, prose), "Длинный комментарий") {
+		t.Error("три строки прозы не пойманы")
+	}
+	link := Comment{Lines: 1, Text: "См. https://example.com/" + strings.Repeat("a", 120), Next: "func f() {"}
+	if hasRule(structChecks(2, 100, link), "Длинная строка комментария") {
+		t.Error("строка со ссылкой оштрафована за длину")
 	}
 }

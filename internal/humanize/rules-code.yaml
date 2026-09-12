@@ -62,7 +62,7 @@ categories:
       - name: данная функция отвечает за
         re: '(?i)(данн(ая|ый|ое)|эт(а|от|о))\s+(функция|метод|класс|компонент|переменная|константа)\s+(отвечает|нужн|служит|предназначен|просто)'
       - name: loop through / returns the result
-        re: '(?i)(loop (through|over)|iterate (through|over)|check if|returns? the (result|value)|sets? the value)'
+        re: '(?i)(loop (through|over)|iterate (through|over)|returns? the (result|value)|sets? the value)'
       - name: цикл по / возвращает результат
         re: '(?i)(цикл по|проходим по|перебираем|проверяем,? что|возвраща(ет|ем) результат|устанавлива(ет|ем) значение)'
 

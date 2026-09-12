@@ -156,7 +156,7 @@ categories:
       - lit: pivotal
       - lit: showcase
       - name: underscore (verb)
-        word_re: 'underscor(?:e|es|ed|ing)'
+        word_re: 'underscor(?:e|es|ed|ing)\s+(?:the|its|his|her|their|a|an|how|why|what)\b'
       - lit: vibrant
       - lit: enduring
       - name: fostering
@@ -449,13 +449,14 @@ categories:
     fix: 'Cut the standalone emphasis line; let the claim carry its own weight.'
     lift: 2.2
     rules:
+      # 'period.' убран: задумка была про риторическое "X. Period.", а такой формы
+      # у машины в корпусе ноль, зато литерал ловил "billing period." в коде.
       - lit: 'full stop.'
       - lit: 'let that sink in'
       - lit: 'make no mistake'
       - lit: 'mark my words'
       - lit: 'i promise'
       - lit: 'read that again'
-      - lit: 'period.'
 
   - name: 'Business jargon'
     fix: 'Use the plain verb instead of the corporate jargon term.'
@@ -539,7 +540,6 @@ categories:
     fix: 'Replace with the plain word; flag only matters when several cluster together.'
     lift: 5.2
     rules:
-      - lit: 'harness'
       - lit: 'elevat'
       - lit: 'unleash'
       - lit: 'resonat'

@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -51,10 +52,29 @@ func CheckComment(cs CodeSets, c Comment, genre string) []Finding {
 		}
 		out = append(out, ruleFindings(rs, c, genre)...)
 	}
+	if docLead(c) {
+		out = slices.DeleteFunc(out, func(f Finding) bool { return f.Category == "Copula inflation" })
+	}
 	if genre == "commit" {
 		return append(out, commitChecks(c)...)
 	}
 	return append(out, structChecks(cs.MaxLines, cs.MaxLineLen, c)...)
+}
+
+// docLead - комментарий открыт конвенцией документации ("Chunk represents a chunk
+// of raw data"). Копула там норма языка, а не канцелярит.
+var copulaLead = regexp.MustCompile(`^(?:\p{Lu}[\p{L}\p{N}_]*\s+)?(?i:represents?|functions?\s+as|presents?|features?|stands?\s+as)\b`)
+
+func docLead(c Comment) bool {
+	t := strings.TrimSpace(c.Text)
+	if !copulaLead.MatchString(t) {
+		return false
+	}
+	if c.Doc {
+		return true
+	}
+	f := strings.Fields(t)
+	return c.Next != "" && strings.Contains(c.Next, f[0])
 }
 
 var (
@@ -109,7 +129,7 @@ var (
 	bannerRe = regexp.MustCompile(`^\s*[-=*#_~+]{6,}\s*$`)
 	// Маркер пишется капсом или со знаком после него: иначе правило ловит обычное
 	// слово - в проекте с фичей "ToDo" оно не маркер, а просто слово.
-	todoRe  = regexp.MustCompile(`\b(?:TODO|FIXME|HACK|XXX|BUG)\b|\b(?i:todo|fixme|hack)\s*[:(]`)
+	todoRe  = regexp.MustCompile(`\b(?:TODO|FIXME|HACK|XXX)\b|\b(?i:todo|fixme|hack)\s*[:(]`)
 	ownerRe = regexp.MustCompile(`(?i)\b(TODO|FIXME|HACK|XXX)\b\s*[(\[]|` +
 		`(?i)(https?://|#\d+|[A-Z]+-\d+|@[a-z][\w.-]+)`)
 	// Ченджлог - это событие с датой или версией. Без них "Update a document"
@@ -122,6 +142,10 @@ var (
 	stepRe     = regexp.MustCompile(`(?i)(?m)^\s*(?:[-*+]|\d+[.)])?\s*(step|шаг)\s*\d+\s*[:.)]`)
 	codeLineRe = regexp.MustCompile(`^\s*(?:if|for|while|switch|return|func|function|const|let|var|import|export|class|struct|guard|public|private|protected|async|await|try|catch|else|case|print|console\.)\b|` +
 		`[;{}]\s*$|^\s*[\w.\[\]]+\s*(?::=|=|\+=|-=)\s*\S|^\s*[\w.]+\([^()]*\)\s*[;{]?\s*$`)
+	// Строка тега JSDoc/TSDoc - это подпись, а не проза: правило про две строки
+	// к ней не относится. Ссылку не перенести, длину по ней тоже не считаем.
+	docTagRe     = regexp.MustCompile(`^\s*@\w+`)
+	longTokenRe  = regexp.MustCompile(`https?://|\]\(`)
 	identSplitRe = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 	// RE2 без lookahead, поэтому HTTPServer режется как HTTPS+erver. Для
 	// сравнения слов комментария с именем этого хватает.
@@ -129,6 +153,12 @@ var (
 )
 
 // structChecks: maxLines - предел длины комментария, 0 отключает проверку.
+// isProse - строка комментария, которую считаем текстом: не пустая и не тег.
+func isProse(l string) bool {
+	t := strings.TrimSpace(l)
+	return t != "" && !docTagRe.MatchString(t)
+}
+
 func structChecks(maxLines, maxLineLen int, c Comment) []Finding {
 	var out []Finding
 	add := func(line int, rule, fix, sample string) {
@@ -136,18 +166,27 @@ func structChecks(maxLines, maxLineLen int, c Comment) []Finding {
 			Line: line, Rule: rule, Fix: fix, Sample: sample})
 	}
 	lines := strings.Split(c.Text, "\n")
+	prose := 0
+	for _, l := range lines {
+		if isProse(l) {
+			prose++
+		}
+	}
 
 	// Пакетная документация - это и есть то место, куда правило предлагает
 	// выносить описание. Штрафовать её за длину бессмысленно.
 	isPkgDoc := strings.HasPrefix(c.Next, "package ")
-	if maxLines > 0 && c.Lines > maxLines && !isPkgDoc {
+	if maxLines > 0 && prose > maxLines && !isPkgDoc {
 		add(c.Start, "Длинный комментарий",
 			fmt.Sprintf("Уложись в %d строки: оставь причину решения, описание вынеси в документацию", maxLines),
-			fmt.Sprintf("строк: %d", c.Lines))
+			fmt.Sprintf("строк прозы: %d из %d", prose, c.Lines))
 	}
 	// Без предела длины строки правило про две строки обходится склейкой:
 	// тот же текст в одну строку на 140 символов формально проходит.
 	for i, l := range lines {
+		if !isProse(l) || longTokenRe.MatchString(l) {
+			continue
+		}
 		if maxLineLen > 0 && len([]rune(l)) > maxLineLen {
 			add(c.Start+i, "Длинная строка комментария",
 				fmt.Sprintf("Перенеси по %d символов: склеить строки не значит сократить", maxLineLen),
