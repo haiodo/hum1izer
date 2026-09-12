@@ -108,6 +108,9 @@ func (c Config) validate() error {
 	if c.Comments.Commits != nil && *c.Comments.Commits < 0 {
 		return errors.New("comments.commits не может быть отрицательным")
 	}
+	if c.Comments.MaxLine != nil && *c.Comments.MaxLine < 0 {
+		return errors.New("comments.max_line не может быть отрицательным")
+	}
 	return nil
 }
 

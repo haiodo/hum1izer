@@ -108,6 +108,7 @@ hum1izer --code .                      # то же плюс последние 2
 | `--code` | parse the arguments as source code, not as prose |
 | `--commits N` | how many recent commits to check, `0` - don't check (20) |
 | `--max-lines N` | a comment longer than this many lines is a finding, `0` - don't count (2) |
+| `--max-line N` | a comment line longer than this many characters is a finding, `0` - don't count (100) |
 | `--skip-tests` | skip `_test.go`, `*.test.*`, `*.spec.*` |
 | `--config F` | use this settings file instead of searching for `.hum1izer.yaml` |
 | `--no-config` | ignore `.hum1izer.yaml` |
@@ -248,7 +249,13 @@ What is checked in addition to the prose rules:
 | Restating the code | `// set user name` above `setUserName()` carries no information |
 | Commented-out code | code history lives in git |
 | Restating the code | the comment repeats the name next to it, including a trailing comment |
-| Long comment | longer than `--max-lines` lines, default 2 |
+| Long comment | longer than `--max-lines` lines of prose, default 2 |
+Two lines by default is a position, not an oversight: a comment answers "why",
+and when the "why" does not fit, the explanation belongs in documentation next
+to the code. Only prose counts - blank lines and tag lines (`@param`,
+`@returns`) are not counted, and package documentation (`package ...` on the
+next line) is exempt. A project with another convention sets `max_lines` in
+`.hum1izer.yaml`.
 | Banner separator | `// =========` should separate by files, not by lines |
 | TODO without an owner | without a name or a task reference it's a TODO forever |
 | Changelog in a comment | "Updated X to Y", "Author:", a date - that's what git blame is for |
@@ -370,10 +377,25 @@ with a snapshot.
 hum1izer --code --format md --limit 20 ./src
 ```
 
-One block per comment: a heading, a list of remarks, and the text itself in
-a fenced block, byte for byte. The fence is chosen longer than the longest
-run of backticks inside it, so a comment containing a code block doesn't
-break the markup.
+One block per comment: a heading, a list of remarks, the text itself in a
+fenced block byte for byte, and a ready-to-run fix command. The fence is chosen
+longer than the longest run of backticks inside it, so a comment containing a
+code block doesn't break the markup.
+
+```markdown
+## src/a.ts:5-14
+block 55dc2ad977ba | `ts` | comment | вес 7
+
+- **this function is responsible for** (стр. 6) - Скажи, почему так сделано
+
+...comment text...
+
+hum1izer fix --block 55dc2ad977ba --text "<new text>" --write src/a.ts
+```
+
+The command comes with the id and the path already filled in, so the model does
+not have to connect them itself. Where nothing has to be decided - commented-out
+code, an empty shell, a banner - `--delete` is filled in instead.
 
 For machine processing there is `--format jsonl`, one line of JSON per
 block. It suits an agent worse: in JSON the text is escaped, and a real
@@ -401,8 +423,8 @@ One block is one edit, not a separate finding for every rule match.
 
 A finding's weight in `score` is taken from the rule's `lift` field: how
 many times more often the marker occurs in machine text than in human text.
-A hard finding gets triple weight, capped at 10; unmeasured rules have a
-weight of one.
+The value is rounded and capped at 10, unmeasured rules weigh one, and a hard
+finding costs three times as much - up to 30.
 
 The measurement is our own, on the
 [LLMTrace](https://huggingface.co/datasets/iitolstykh/LLMTrace_detection)
@@ -449,10 +471,28 @@ invent its own way of editing the file:
 
 ```bash
 hum1izer fix --block 55dc2ad977ba --text "The reason, not a restatement" ./src   # preview
-hum1izer fix --block 55dc2ad977ba --text "..." --write ./src                     # apply
+hum1izer fix --block 55dc2ad977ba --text "The reason, not a restatement" --write ./src   # apply
 hum1izer fix --block a832aeaac8cf --delete --write ./src                         # delete the block
 hum1izer fix --auto ./src                                                        # mechanical only
 ```
+
+### A round of thirty
+
+The report and the edit share one format, so the loop closes without moving
+fields around:
+
+```bash
+hum1izer --code --format jsonl --limit 30 ./src > work.jsonl   # 1. take the 30 worst
+# 2. add "text": "..." or "delete": true to the lines you change
+hum1izer fix --batch work.jsonl --write ./src                   # 3. apply
+```
+
+A report line already holds everything the decision needs: `hash` is the block
+id, plus `file`, `start`, `end`, `raw` (the comment byte-for-byte) and
+`findings` with the rule and its advice. The `block` field is optional in a
+batch: the `hash` from the report works as is. Lines with neither `text` nor
+`delete` are skipped and counted on stderr. Then run the report again -
+`remaining` on stderr is how many blocks are left.
 
 In bulk - one JSON per line, the tree is walked once:
 

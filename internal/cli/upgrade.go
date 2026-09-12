@@ -259,6 +259,10 @@ func replaceSelf(bin []byte) (string, error) {
 		}
 	}
 	if err := os.Rename(tmp.Name(), exe); err != nil {
+		if runtime.GOOS == "windows" {
+			// Иначе на месте бинарника не останется ничего, кроме .old.
+			_ = os.Rename(exe+".old", exe)
+		}
 		return "", fmt.Errorf("не удалось заменить %s: %w", exe, err)
 	}
 	return exe, nil

@@ -531,7 +531,8 @@ categories:
       - lit: 'impactful'
       - lit: 'learnings'
       - lit: 'symphony'
-      - lit: 'realm'
+      - name: realm(s)
+        word_re: 'realms?'
       - lit: 'complexities'
       - name: 'game-changing'
         word_re: 'game.changing'

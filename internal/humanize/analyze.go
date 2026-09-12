@@ -287,7 +287,16 @@ var nominalSuffixes = []string{"ение", "ания", "ения", "ание", "
 // verbSuffixes: грубый признак глагольной формы. Причастия сюда попадают
 // намеренно, но «мать» и «путь» дают ложное «ть».
 var verbSuffixes = []string{"ться", "тся", "ешь", "ишь", "ете", "ите", "ают", "яют",
-	"уют", "юют", "ует", "ирует", "ают", "ял", "ил", "ал", "ла", "ли", "ло", "вший", "вшая"}
+	"уют", "юют", "ует", "ирует", "ял", "ил", "ал", "ла", "ли", "ло", "вший", "вшая"}
+
+// lastRune: срез по байту рвёт кириллицу, а проверка идёт по последнему символу.
+func lastRune(s string) string {
+	r := []rune(s)
+	if len(r) == 0 {
+		return ""
+	}
+	return string(r[len(r)-1])
+}
 
 func morph(text string, words int) Morph {
 	m := Morph{}
@@ -437,7 +446,7 @@ func countTitleCaseHeadings(text string) int {
 		}
 		isMD := strings.HasPrefix(s, "#")
 		nextEmpty := i+1 >= len(lines) || strings.TrimSpace(lines[i+1]) == ""
-		looksLike := len([]rune(s)) <= 80 && !strings.ContainsAny(s[len(s)-1:], ".!?:;,") &&
+		looksLike := len([]rune(s)) <= 80 && !strings.ContainsAny(lastRune(s), ".!?:;,") &&
 			nextEmpty && !listRe.MatchString(raw)
 		if !isMD && !looksLike {
 			continue

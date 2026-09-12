@@ -69,7 +69,7 @@ One block per comment, the dirtiest first. stderr shows
 
 ````markdown
 ## src/a.ts:5-14
-`ts`, comment, вес 7, 55dc2ad977ba
+block 55dc2ad977ba | `ts` | comment | вес 7
 
 - **this function is responsible for** (стр. 6) - Скажи, почему так сделано, а не что делает строка ниже
 
@@ -78,10 +78,42 @@ One block per comment, the dirtiest first. stderr shows
  * This function is responsible for handling the request.
  */
 ```
+
+```bash
+hum1izer fix --block 55dc2ad977ba --text "<новый текст>" --write src/a.ts
+```
 ````
 
+Every block carries the command that fixes it, with its own id and file already
+filled in. Blocks where nothing has to be decided - commented-out code, an empty
+shell, a banner - come with `--delete` instead of `--text`.
+
+### Thirty at a time
+
+On a repository with hundreds of findings, work in rounds of 20-30 and keep the
+report and the edit in one format:
+
+```bash
+hum1izer --code --format jsonl --limit 30 ./src > work.jsonl
+```
+
+Each line already holds everything the decision needs: `hash` (the block id),
+`file`, `start`, `end`, `raw` (the comment byte-for-byte) and `findings` with the
+rule and its advice. Add one field to the lines you decided to change - `"text"`
+with the new prose, or `"delete": true` - leave the rest of the line alone, and
+feed the same file back:
+
+```bash
+hum1izer fix --batch work.jsonl --write ./src
+```
+
+Lines you didn't touch are skipped, and the count of them goes to stderr. Then
+run the report again: `remaining` on stderr is the number of blocks still open.
+Repeat until it reaches zero or stops falling.
+
 1. The text in the fenced block is the source byte-for-byte, including `//`
-   and `/* */`. Take it from there as is. The `--format jsonl` format gives
+   and `/* */`. Read it from there; the id to fix it by stands after `block`
+   in the line under the heading. The `--format jsonl` format gives
    the same thing in machine form, but there the text is escaped, which
    makes it less convenient for an exact replacement.
 2. Look at the block's weight. The weight is computed from a measurement on

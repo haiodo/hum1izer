@@ -7,17 +7,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/haiodo/hum1izer/internal/baseline"
 	"github.com/haiodo/hum1izer/internal/code"
+	"github.com/haiodo/hum1izer/internal/config"
 	"github.com/haiodo/hum1izer/internal/humanize"
 )
 
 const fixUsage = `hum1izer fix - применить правку к блоку комментария по хэшу из отчёта.
 
   hum1izer fix --block <хэш> --delete путь        удалить блок целиком
-  hum1izer fix --block <хэш> --text "..." путь    заменить текст блока
+  hum1izer fix --block <хэш> --text "<текст>" путь  заменить текст блока
   hum1izer fix --block <хэш> --text - путь        то же, текст со stdin
   hum1izer fix --auto путь                        удалить механическое
   hum1izer fix --batch - путь                     пачкой: JSONL со stdin
@@ -79,23 +81,45 @@ func runFix(args []string) int {
 		body = strings.TrimSpace(string(b))
 	}
 
-	c, err := locate(root, *block)
+	if !*del && placeholder(body) {
+		fmt.Fprintln(os.Stderr, "--text: это шаблон из отчёта, подставь настоящий текст")
+		return 2
+	}
+
+	blocks, err := locateAll(root, *block)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	e, err := plan(c, *del, body, *maxLine)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+	var edits []edit
+	for _, c := range blocks {
+		raw, err := os.ReadFile(c.File)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 2
+		}
+		e, err := plan(c, string(raw), *del, body, *maxLine)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 2
+		}
+		edits = append(edits, e)
 	}
-	return apply([]edit{e}, *write)
+	return apply(edits, *write)
 }
 
 type batchEdit struct {
 	Block  string `json:"block"`
+	Hash   string `json:"hash"`
 	Text   string `json:"text"`
 	Delete bool   `json:"delete"`
+}
+
+func (b batchEdit) id() string {
+	if b.Block != "" {
+		return b.Block
+	}
+	return b.Hash
 }
 
 // fixBatch применяет пачку правок за один обход дерева: на большом репозитории
@@ -113,6 +137,7 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 	}
 
 	want := map[string]batchEdit{}
+	skipped := 0
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for line := 1; sc.Scan(); line++ {
@@ -125,18 +150,26 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 			fmt.Fprintf(os.Stderr, "строка %d: %v\n", line, err)
 			return 2
 		}
-		if b.Block == "" || (b.Text == "" && !b.Delete) {
-			fmt.Fprintf(os.Stderr, "строка %d: нужен block и text или delete\n", line)
+		if b.id() == "" {
+			fmt.Fprintf(os.Stderr, "строка %d: нет поля block или hash\n", line)
 			return 2
 		}
-		want[b.Block] = b
+		if b.Text == "" && !b.Delete {
+			skipped++
+			continue
+		}
+		if !b.Delete && placeholder(b.Text) {
+			fmt.Fprintf(os.Stderr, "строка %d: в text шаблон, а не текст\n", line)
+			return 2
+		}
+		want[b.id()] = b
 	}
 	if err := sc.Err(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
 
-	paths, err := code.WalkCode(root, code.Filter{})
+	paths, err := walkPaths(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
@@ -148,19 +181,26 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 		if err != nil {
 			continue
 		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
 		for _, c := range cmts {
 			b, ok := want[baseline.Hash(c.Text)]
 			if !ok {
 				continue
 			}
-			e, err := plan(c, b.Delete, b.Text, maxLine)
+			e, err := plan(c, string(raw), b.Delete, b.Text, maxLine)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s: %v\n", b.Block, err)
+				fmt.Fprintf(os.Stderr, "%s: %v\n", b.id(), err)
 				continue
 			}
-			found[b.Block] = true
+			found[b.id()] = true
 			edits = append(edits, e)
 		}
+	}
+	if skipped > 0 {
+		fmt.Fprintf(os.Stderr, "пропущено без правки: %d\n", skipped)
 	}
 	exit := 0
 	for h := range want {
@@ -175,18 +215,48 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 	return exit
 }
 
-// edit - замена строк [from, to) файла новыми. Пустой lines означает удаление.
+// edit - замена байтового диапазона [so, eo) текстом new: комментарий бывает посреди строки кода
 type edit struct {
-	file     string
-	from, to int
-	old, new []string
+	file   string
+	so, eo int
+	new    string
+	line   int      // строка начала, для предпросмотра
+	old    []string // что уходит, для предпросмотра
 }
 
-func locate(root, hash string) (code.Comment, error) {
-	paths, err := code.WalkCode(root, code.Filter{})
+// walkFilter - тот же отбор файлов, что и у основного прогона: правка не должна
+// лезть в то, что проект исключил в .hum1izer.yaml.
+func walkFilter(root string) (code.Filter, error) {
+	cfg, err := config.Find(root)
 	if err != nil {
-		return code.Comment{}, err
+		return code.Filter{}, fmt.Errorf("настройки: %w", err)
 	}
+	excludes, err := cfg.Excludes()
+	if err != nil {
+		return code.Filter{}, fmt.Errorf("исключения: %w", err)
+	}
+	skipTests := cfg.Comments.SkipTests != nil && *cfg.Comments.SkipTests
+	return code.Filter{Langs: cfg.AllowedLangs(), Exclude: excludes, SkipTests: skipTests}, nil
+}
+
+// walkPaths - файлы под правку. Настройки битые - правку не начинаем: молча
+// пройтись по исключённому дереву хуже, чем не пройтись вовсе.
+func walkPaths(root string) ([]string, error) {
+	f, err := walkFilter(root)
+	if err != nil {
+		return nil, err
+	}
+	return code.WalkCode(root, f)
+}
+
+// locateAll - все блоки с этим хэшем: ключ находки - текст, а не файл, поэтому
+// три одинаковых комментария правятся разом.
+func locateAll(root, hash string) ([]code.Comment, error) {
+	paths, err := walkPaths(root)
+	if err != nil {
+		return nil, err
+	}
+	var out []code.Comment
 	for _, p := range paths {
 		cmts, err := code.ExtractComments(p)
 		if err != nil {
@@ -194,44 +264,80 @@ func locate(root, hash string) (code.Comment, error) {
 		}
 		for _, c := range cmts {
 			if baseline.Hash(c.Text) == hash {
-				return c, nil
+				out = append(out, c)
 			}
 		}
 	}
-	return code.Comment{}, fmt.Errorf("блок %s не найден в %s: текст изменился или путь не тот", hash, root)
+	if len(out) == 0 {
+		return nil, fmt.Errorf("блок %s не найден в %s: текст изменился или путь не тот", hash, root)
+	}
+	return out, nil
 }
 
-func plan(c code.Comment, del bool, body string, maxLine int) (edit, error) {
-	src, err := os.ReadFile(c.File)
-	if err != nil {
-		return edit{}, err
+func plan(c code.Comment, src string, del bool, body string, maxLine int) (edit, error) {
+	if c.SO < 0 || c.EO > len(src) || c.SO >= c.EO {
+		return edit{}, fmt.Errorf("%s: блок вне файла, смещения %d-%d", c.File, c.SO, c.EO)
 	}
-	lines := strings.Split(string(src), "\n")
-	if c.Start < 1 || c.End > len(lines) {
-		return edit{}, fmt.Errorf("%s: блок вне файла, строки %d-%d", c.File, c.Start, c.End)
-	}
-	from, to := c.Start-1, c.End
-	old := lines[from:to]
 
-	head := strings.Split(c.Raw, "\n")[0]
-	// Комментарий в хвосте строки кода: трогаем только его часть, код остаётся.
-	if cut := strings.Index(lines[from], strings.TrimSpace(head)); cut > 0 && strings.TrimSpace(lines[from][:cut]) != "" {
-		if !del {
+	lineStart := strings.LastIndexByte(src[:c.SO], '\n') + 1
+	lineEnd := len(src)
+	if i := strings.IndexByte(src[c.EO:], '\n'); i >= 0 {
+		lineEnd = c.EO + i
+	}
+	prefix := src[lineStart:c.SO] // что на строке до комментария
+	suffix := src[c.EO:lineEnd]   // и что после него
+	ownLine := strings.TrimSpace(prefix) == ""
+	e := edit{file: c.File, line: c.Start, old: strings.Split(src[lineStart:lineEnd], "\n")}
+
+	if !del {
+		if !ownLine {
 			return edit{}, fmt.Errorf("замена хвостового комментария не поддерживается, правь его вручную")
 		}
-		kept := strings.TrimRight(lines[from][:cut], " \t")
-		return edit{file: c.File, from: from, to: to, old: old, new: []string{kept}}, nil
+		e.so, e.eo = lineStart, c.EO
+		head := strings.SplitN(c.Raw, "\n", 2)[0]
+		e.new = strings.Join(renderComment(prefix, head, body, maxLine), nl(crlf(src)))
+		return e, nil
 	}
-	if del {
-		return edit{file: c.File, from: from, to: to, old: old}, nil
+
+	// Строка была только под комментарий - убираем её целиком вместе с переводом
+	// строки, иначе после правки остаётся пустая.
+	if ownLine && strings.TrimSpace(suffix) == "" {
+		e.so, e.eo = lineStart, min(lineEnd+1, len(src))
+		return e, nil
 	}
-	return edit{file: c.File, from: from, to: to, old: old, new: renderComment(lines[from], body, maxLine)}, nil
+	// Комментарий посреди кода: снимаем только его, код слева и справа остаётся.
+	e.so, e.eo = c.SO, c.EO
+	if strings.TrimSpace(suffix) == "" {
+		e.so = lineStart + len(strings.TrimRight(prefix, " \t"))
+		e.eo = lineEnd
+		// CR принадлежит переводу строки, а не комментарию: срежем - получим
+		// смешанные концы строк в CRLF-файле.
+		if e.eo > e.so && src[e.eo-1] == '\r' {
+			e.eo--
+		}
+	}
+	return e, nil
+}
+
+// placeholder - текст из шаблона команды, а не правка. Без проверки слабая
+// модель копирует команду целиком и превращает комментарий в "...".
+func placeholder(s string) bool {
+	t := strings.TrimSpace(s)
+	return t == "" || strings.Trim(t, ".") == "" || t == "<новый текст>"
+}
+
+func crlf(src string) bool { return strings.Contains(src, "\r\n") }
+
+func nl(crlf bool) string {
+	if crlf {
+		return "\r\n"
+	}
+	return "\n"
 }
 
 // renderComment собирает комментарий обратно: отступ и маркер берутся из исходного
 // блока, текст переносится по maxLine.
-func renderComment(head, body string, maxLine int) []string {
-	indent := head[:len(head)-len(strings.TrimLeft(head, " \t"))]
+func renderComment(indent, head, body string, maxLine int) []string {
 	marker := "//"
 	switch t := strings.TrimLeft(head, " \t"); {
 	case strings.HasPrefix(t, "///"):
@@ -242,7 +348,13 @@ func renderComment(head, body string, maxLine int) []string {
 		marker = "*"
 	}
 
-	width := maxLine - len(indent) - len(marker) - 1
+	// У блочного комментария строка начинается с " * " - три символа, не один.
+	// У блочного комментария строка начинается с " * " - три символа, не один.
+	lead := len(marker) + 1
+	if marker == "*" {
+		lead = 3
+	}
+	width := maxLine - len(indent) - lead
 	if width < 20 {
 		width = 20
 	}
@@ -255,7 +367,8 @@ func renderComment(head, body string, maxLine int) []string {
 		}
 		return out
 	}
-	if len(chunks) == 1 {
+	// Однострочная форма добавляет ещё " */" в хвост: не влезли - собираем блок.
+	if len(chunks) == 1 && len(indent)+6+len([]rune(chunks[0])) <= maxLine {
 		return []string{indent + "/* " + chunks[0] + " */"}
 	}
 	out := []string{indent + "/**"}
@@ -283,13 +396,8 @@ func wrap(s string, width int) []string {
 	return append(out, line)
 }
 
-// fixAuto удаляет то, что чинится без модели: закомментированный код и
-// комментарии-пустышки вроде "// constructor".
-var autoRules = map[string]bool{
-	"Закомментированный код": true,
-	"Комментарий-пустышка":   true,
-}
-
+// fixAuto удаляет то, что чинится без модели. Список - deleteOnly, значение
+// true там и означает "можно без модели".
 func fixAuto(root string, write bool) int {
 	cs := code.CodeSets{}
 	var err error
@@ -302,7 +410,7 @@ func fixAuto(root string, write bool) int {
 			return 2
 		}
 	}
-	paths, err := code.WalkCode(root, code.Filter{})
+	paths, err := walkPaths(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
@@ -313,17 +421,21 @@ func fixAuto(root string, write bool) int {
 		if err != nil {
 			continue
 		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
 		for _, c := range cmts {
 			hit := false
 			for _, f := range code.CheckComment(cs, c, "code") {
-				if autoRules[f.Rule] || autoRules[f.Category] {
+				if deleteOnly[f.Rule] || deleteOnly[f.Category] {
 					hit = true
 				}
 			}
 			if !hit {
 				continue
 			}
-			e, err := plan(c, true, "", 0)
+			e, err := plan(c, string(raw), true, "", 0)
 			if err != nil {
 				continue
 			}
@@ -333,7 +445,7 @@ func fixAuto(root string, write bool) int {
 	return apply(edits, write)
 }
 
-// apply правит файлы снизу вверх, чтобы номера строк выше правки не съезжали.
+// apply правит файлы с конца, чтобы смещения выше правки не съезжали.
 func apply(edits []edit, write bool) int {
 	byFile := map[string][]edit{}
 	for _, e := range edits {
@@ -344,29 +456,36 @@ func apply(edits []edit, write bool) int {
 		return 0
 	}
 	for file, es := range byFile {
+		sortEditsDesc(es)
 		for i := len(es) - 1; i >= 0; i-- {
 			e := es[i]
-			for i, l := range e.old {
-				fmt.Printf("- %s:%d %s\n", file, e.from+1+i, l)
+			for j, l := range e.old {
+				fmt.Printf("- %s:%d %s\n", file, e.line+j, l)
 			}
-			for i, l := range e.new {
-				fmt.Printf("+ %s:%d %s\n", file, e.from+1+i, l)
+			for j, l := range strings.Split(e.new, "\n") {
+				if e.new == "" {
+					break
+				}
+				fmt.Printf("+ %s:%d %s\n", file, e.line+j, strings.TrimSuffix(l, "\r"))
 			}
 		}
 		if !write {
 			continue
 		}
-		src, err := os.ReadFile(file)
+		raw, err := os.ReadFile(file)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 2
 		}
-		lines := strings.Split(string(src), "\n")
-		sortEditsDesc(es)
+		src := string(raw)
 		for _, e := range es {
-			lines = append(lines[:e.from], append(append([]string{}, e.new...), lines[e.to:]...)...)
+			if e.so < 0 || e.eo > len(src) || e.so > e.eo {
+				fmt.Fprintf(os.Stderr, "%s: диапазон %d-%d вне файла, правка пропущена\n", file, e.so, e.eo)
+				continue
+			}
+			src = src[:e.so] + e.new + src[e.eo:]
 		}
-		if err := os.WriteFile(file, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		if err := os.WriteFile(file, []byte(src), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 2
 		}
@@ -377,10 +496,7 @@ func apply(edits []edit, write bool) int {
 	return 0
 }
 
+// sortEditsDesc - правки по убыванию смещения: так ранние не сдвигают поздние.
 func sortEditsDesc(es []edit) {
-	for i := 1; i < len(es); i++ {
-		for j := i; j > 0 && es[j].from > es[j-1].from; j-- {
-			es[j], es[j-1] = es[j-1], es[j]
-		}
-	}
+	sort.Slice(es, func(i, j int) bool { return es[i].so > es[j].so })
 }

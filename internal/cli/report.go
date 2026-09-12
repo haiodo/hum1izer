@@ -225,9 +225,12 @@ func printJSONL(items []code.Item, limit, files, blocks int) {
 // его точным совпадением, модели пришлось бы развернуть экранирование в уме.
 func printMarkdown(items []code.Item, limit, files, blocks int) {
 	shown := cut(items, limit)
+	if len(shown) > 0 {
+		fmt.Print(mdHowTo)
+	}
 	for _, it := range shown {
 		fmt.Printf("## %s\n", it.ID)
-		fmt.Printf("`%s`, %s, вес %d, %s\n\n", it.Lang, it.Kind, it.Score, it.Hash)
+		fmt.Printf("block %s | `%s` | %s | вес %d\n\n", it.Hash, it.Lang, it.Kind, it.Score)
 		for _, g := range groupFindings(it.Findings) {
 			mark := ""
 			if g.hard {
@@ -241,9 +244,47 @@ func printMarkdown(items []code.Item, limit, files, blocks int) {
 		}
 		fence := fenceFor(it.Raw)
 		fmt.Printf("\n%s\n%s\n%s\n\n", fence, it.Raw, fence)
+		if it.Kind == "comment" {
+			fmt.Printf("%s\n\n", fixCommand(it))
+		}
 	}
 	fmt.Fprintf(os.Stderr, "remaining=%d shown=%d findings=%d comments=%d files=%d\n",
 		len(items), len(shown), countFindings(items), blocks, files)
+}
+
+const mdHowTo = "Как править: команда есть под каждым блоком, id блока стоит после слова `block`.\n" +
+	"Текст даётся без `//` и `/* */` - маркер, отступ и перенос инструмент\n" +
+	"восстановит сам. Без `--write` печатается дифф, файл не меняется. Строки после\n" +
+	"первой правки съезжают, id блока - нет. Один и тот же текст в разных файлах -\n" +
+	"один блок: команда правит все его копии сразу.\n\n"
+
+// deleteOnly - правила, где решать нечего: такой блок удаляется целиком.
+// Значение true - удаляется и без модели, это и делает fix --auto.
+var deleteOnly = map[string]bool{
+	"Закомментированный код": true,
+	"Комментарий-пустышка":   true,
+	"Баннер-разделитель":     false,
+}
+
+func deletable(rule, category string) bool {
+	_, byRule := deleteOnly[rule]
+	_, byCat := deleteOnly[category]
+	return byRule || byCat
+}
+
+// fixCommand - готовая команда под блок. Слабая модель не связывает хэш из
+// шапки с флагом --block, поэтому команда печатается целиком.
+func fixCommand(it code.Item) string {
+	del := len(it.Findings) > 0
+	for _, f := range it.Findings {
+		if !deletable(f.Rule, f.Category) {
+			del = false
+		}
+	}
+	if del {
+		return fmt.Sprintf("```bash\nhum1izer fix --block %s --delete --write %q\n```", it.Hash, it.File)
+	}
+	return fmt.Sprintf("```bash\nhum1izer fix --block %s --text \"<новый текст>\" --write %q\n```", it.Hash, it.File)
 }
 
 // groupFindings схлопывает одно правило в одну строку со списком строк:
@@ -296,7 +337,8 @@ func printFindingsJSON(items []code.Item, limit int) {
 	for _, it := range cut(items, limit) {
 		for _, f := range it.Findings {
 			out = append(out, code.Finding{File: it.File, Line: f.Line,
-				Rule: f.Rule, Fix: f.Fix, Sample: f.Sample, Hard: f.Hard})
+				Rule: f.Rule, Category: f.Category, Lift: f.Lift,
+				Fix: f.Fix, Sample: f.Sample, Hard: f.Hard})
 		}
 	}
 	enc := json.NewEncoder(os.Stdout)

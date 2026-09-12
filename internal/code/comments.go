@@ -27,6 +27,8 @@ type Comment struct {
 	Lang  string `json:"lang"` // go, ts, svelte, swift, git
 	Next  string `json:"-"`    // первая строка кода после блока, для проверки пересказа
 	Doc   bool   `json:"-"`    // /** */, /// или /// - документирующий комментарий
+	SO    int    `json:"-"`    // смещение начала блока в байтах
+	EO    int    `json:"-"`    // смещение конца блока в байтах
 }
 
 // ID - устойчивый ключ блока для агента: по нему он сверяет, ушла ли находка
@@ -45,7 +47,7 @@ var skipDirs = map[string]bool{
 	".rollup.cache": true, "__pycache__": true,
 }
 
-var generatedRe = regexp.MustCompile(`(?m)^(//|#|/\*) *Code generated .* DO NOT EDIT|@generated|eslint-disable|sourceMappingURL=`)
+var generatedRe = regexp.MustCompile(`(?m)^(//|#|/\*) *Code generated .* DO NOT EDIT|@generated|sourceMappingURL=`)
 
 // isGenerated: маркеры стоят либо в шапке, либо в самом конце
 // (sourceMappingURL у собранного JS), середину файла смотреть незачем.
@@ -173,6 +175,8 @@ func ExtractComments(path string) ([]Comment, error) {
 			Lang:  lang,
 			Next:  codeFor(text, lines, s),
 			Doc:   isDoc(rawLines),
+			SO:    s.so,
+			EO:    minInt(s.eo, len(text)),
 		})
 	}
 	return out, nil
@@ -208,10 +212,11 @@ func goSpans(path string, src []byte) ([]span, error) {
 		return nil, err
 	}
 	var out []span
+	text := string(src)
 	for _, cg := range f.Comments {
 		for _, c := range cg.List {
 			b, e := fset.Position(c.Pos()), fset.Position(c.End())
-			out = append(out, span{b.Line, e.Line, b.Offset, e.Offset, ownLine(string(src), b.Offset)})
+			out = append(out, span{b.Line, e.Line, b.Offset, e.Offset, ownLine(text, b.Offset)})
 		}
 	}
 	return out, nil
@@ -364,18 +369,44 @@ func regexAllowed(prev byte) bool {
 }
 
 var (
-	svelteScriptRe = regexp.MustCompile(`(?s)<(script|style)\b[^>]*>(.*?)</(script|style)>`)
-	htmlCommentRe  = regexp.MustCompile(`(?s)<!--.*?-->`)
+	svelteOpenRe  = regexp.MustCompile(`(?is)<(script|style)\b[^>]*>`)
+	svelteCloseRe = map[string]*regexp.Regexp{
+		"script": regexp.MustCompile(`(?is)</script\s*>`),
+		"style":  regexp.MustCompile(`(?is)</style\s*>`),
+	}
+	htmlCommentRe = regexp.MustCompile(`(?s)<!--.*?-->`)
 )
+
+// svelteBlocks - содержимое <script> и <style>. Закрывающий тег ищется по имени
+// открывшего: одним regexp это не выразить, в RE2 нет обратных ссылок, а пара
+// <script>...</style> съела бы настоящий </script> вместе с комментариями за ним.
+func svelteBlocks(src string) [][2]int {
+	var out [][2]int
+	for pos := 0; pos < len(src); {
+		m := svelteOpenRe.FindStringSubmatchIndex(src[pos:])
+		if m == nil {
+			break
+		}
+		start := pos + m[1]
+		tag := strings.ToLower(src[pos+m[2] : pos+m[3]])
+		c := svelteCloseRe[tag].FindStringIndex(src[start:])
+		if c == nil {
+			break
+		}
+		out = append(out, [2]int{start, start + c[0]})
+		pos = start + c[1]
+	}
+	return out
+}
 
 // scanSvelte: <script>/<style> сканируем как C, разметку - только на <!-- -->.
 func scanSvelte(src string) []span {
 	var out []span
-	for _, m := range svelteScriptRe.FindAllStringIndex(src, -1) {
-		base := strings.Count(src[:m[0]], "\n")
-		for _, s := range scanC(src[m[0]:m[1]], cOpts{regexLit: true}) {
+	for _, b := range svelteBlocks(src) {
+		base := strings.Count(src[:b[0]], "\n")
+		for _, s := range scanC(src[b[0]:b[1]], cOpts{regexLit: true}) {
 			out = append(out, span{s.start + base, s.end + base,
-				s.so + m[0], s.eo + m[0], ownLine(src, s.so+m[0])})
+				s.so + b[0], s.eo + b[0], ownLine(src, s.so+b[0])})
 		}
 	}
 	for _, m := range htmlCommentRe.FindAllStringIndex(src, -1) {

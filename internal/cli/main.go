@@ -150,6 +150,9 @@ func Run() int {
 	if *basePath != "" && !given["commits"] {
 		*commits = 0
 	}
+	if *writeBase && *basePath == "" {
+		fmt.Fprintln(os.Stderr, "--write-baseline без --baseline ничего не пишет: укажи файл снимка")
+	}
 	switch {
 	case *asJSON:
 		*format = "json"
@@ -201,6 +204,9 @@ func runText(args []string, rulesPath, lang, genre, format string, top int) int 
 		}
 		rep := humanize.Analyze(rs, text, genre)
 		switch format {
+		case "md":
+			fmt.Fprintln(os.Stderr, "--format md есть только у --code, для прозы доступны text, json, quiet")
+			return 2
 		case "json", "jsonl":
 			printJSON(src, rep)
 		case "quiet":

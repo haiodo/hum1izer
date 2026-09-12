@@ -64,6 +64,15 @@ func TestExtractSvelte(t *testing.T) {
 	}
 }
 
+func TestExtractSvelteClosingTagInString(t *testing.T) {
+	src := "<script>\n  const s = \"</style>\";\n  // комментарий после литерала\n</script>\n" +
+		"<style>\n  /* в стилях */\n</style>\n"
+	got := extract(t, "a.svelte", src)
+	if len(got) != 2 {
+		t.Fatalf("блоков: %d, ожидалось 2: %q", len(got), texts(got))
+	}
+}
+
 func TestExtractSwift(t *testing.T) {
 	src := "/// документация\nfunc f() {\n    let s = \"// не комментарий\"\n}\n"
 	got := extract(t, "a.swift", src)
