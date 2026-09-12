@@ -292,3 +292,110 @@ func TestFixBlockEditsEveryCopy(t *testing.T) {
 		t.Fatalf("нашли %d копий, ожидали 2", len(blocks))
 	}
 }
+
+func TestBatchFileNarrowsEditToOneCopy(t *testing.T) {
+	dir := t.TempDir()
+	src := "package demo\n\n// No transformation, just pass through\nvar x = 1\n"
+	for _, name := range []string{"a.go", "b.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmts, err := code.ExtractComments(filepath.Join(dir, "a.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := baseline.Hash(cmts[0].Text)
+
+	batch := filepath.Join(dir, "work.jsonl")
+	line := `{"hash":"` + hash + `","file":"` + filepath.Join(dir, "a.go") + `","delete":true}` + "\n"
+	if err := os.WriteFile(batch, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rc := fixBatch(dir, batch, true, 100); rc != 0 {
+		t.Fatalf("пачка вернула %d, ожидался 0", rc)
+	}
+	a, _ := os.ReadFile(filepath.Join(dir, "a.go"))
+	b, _ := os.ReadFile(filepath.Join(dir, "b.go"))
+	if strings.Contains(string(a), "No transformation") {
+		t.Error("в указанном файле блок не удалён")
+	}
+	if !strings.Contains(string(b), "No transformation") {
+		t.Error("правка ушла в файл, который не просили")
+	}
+}
+
+func TestBatchWithoutFileEditsEveryCopy(t *testing.T) {
+	dir := t.TempDir()
+	src := "package demo\n\n// No transformation, just pass through\nvar x = 1\n"
+	for _, name := range []string{"a.go", "b.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmts, err := code.ExtractComments(filepath.Join(dir, "a.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch := filepath.Join(dir, "work.jsonl")
+	line := `{"hash":"` + baseline.Hash(cmts[0].Text) + `","delete":true}` + "\n"
+	if err := os.WriteFile(batch, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rc := fixBatch(dir, batch, true, 100); rc != 0 {
+		t.Fatalf("пачка вернула %d, ожидался 0", rc)
+	}
+	for _, name := range []string{"a.go", "b.go"} {
+		got, _ := os.ReadFile(filepath.Join(dir, name))
+		if strings.Contains(string(got), "No transformation") {
+			t.Errorf("%s: копия блока осталась", name)
+		}
+	}
+}
+
+// Сканер не для Go забирает в блок и \r - при замене его нельзя срезать вместе
+// с текстом, иначе в файле появляются смешанные концы строк.
+func TestPlanKeepsCRLFInNonGoFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.ts")
+	src := "const x = 1;\r\n\r\n// старый текст\r\nconst y = 2;\r\n"
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmts, err := code.ExtractComments(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := planAt(t, cmts[0], false, strings.Repeat("слово ", 30), 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := src[:e.so] + e.new + src[e.eo:]
+	if strings.Contains(strings.ReplaceAll(got, "\r\n", ""), "\n") {
+		t.Errorf("смешанные концы строк:\n%q", got)
+	}
+}
+
+func TestPlanDeletesInlineCommentInCRLFFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.ts")
+	src := "const x = f(a /* почему */, y);\r\nconst z = 3;\r\n"
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmts, err := code.ExtractComments(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := planAt(t, cmts[0], true, "", 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := src[:e.so] + e.new + src[e.eo:]
+	if !strings.Contains(got, "f(a , y)") {
+		t.Errorf("код вокруг комментария потерян: %q", got)
+	}
+	if strings.Contains(strings.ReplaceAll(got, "\r\n", ""), "\n") {
+		t.Errorf("смешанные концы строк:\n%q", got)
+	}
+}

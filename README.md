@@ -498,9 +498,14 @@ In bulk - one JSON per line, the tree is walked once:
 
 ```bash
 printf '%s\n' '{"block":"55dc2ad977ba","text":"new text"}' \
-               '{"block":"a832aeaac8cf","delete":true}' |
+               '{"block":"a832aeaac8cf","delete":true}' \
+               '{"block":"56fa9eb0ddfa","file":"src/a.ts","delete":true}' |
   hum1izer fix --batch - --write ./src
 ```
+
+The same text in several files is one block with one id, and the report marks it
+`копий текста: N`. Without `file` the edit goes to every copy - that is what you
+want for a stock line repeated across the tree. With `file` it goes only there.
 
 You give the prose only: the tool restores the marker, the indent and the wrap
 at `--max-line`. Deleting removes whole lines and leaves no blanks behind, and

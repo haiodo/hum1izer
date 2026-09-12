@@ -137,10 +137,17 @@ Repeat until it reaches zero or stops falling.
    Several at once - one JSON per line, the tree is walked once:
 
    ```bash
-   printf '%s\n' '{"block":"55dc2ad977ba","text":"..."}' \
-                  '{"block":"a832aeaac8cf","delete":true}' |
+   printf '%s\n' '{"block":"55dc2ad977ba","text":"new text"}' \
+                  '{"block":"a832aeaac8cf","delete":true}' \
+                  '{"block":"56fa9eb0ddfa","file":"src/a.ts","delete":true}' |
      hum1izer fix --batch - --write ./src
    ```
+
+   The same text in three files is one block with one id - the report says
+   `копий текста: 3`. Without `file` the edit lands in every copy, which is
+   what you want for a stock comment like "No transformation, just pass
+   through". Add `file` (take it from the report) when only one of them is
+   wrong.
 
    Pass the file from the report header, not the project root: the tool then
    reads that one file instead of walking the whole tree.

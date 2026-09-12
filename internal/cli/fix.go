@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -31,6 +32,10 @@ const fixUsage = `hum1izer fix - применить правку к блоку �
 
   {"block":"55dc2ad977ba","text":"новый текст комментария"}
   {"block":"a832aeaac8cf","delete":true}
+  {"block":"56fa9eb0ddfa","file":"src/a.ts","delete":true}
+
+Одинаковый текст в разных файлах - один блок с одним хэшем. Без file правка
+уходит во все его копии, с file - только в указанный.
 
 Блок ищется по хэшу, а не по номеру строки: после первой же правки строки
 съезжают, хэш нет. Текст задаётся без // и /* */ - маркеры, отступ и перенос
@@ -111,8 +116,25 @@ func runFix(args []string) int {
 type batchEdit struct {
 	Block  string `json:"block"`
 	Hash   string `json:"hash"`
+	File   string `json:"file"`
 	Text   string `json:"text"`
 	Delete bool   `json:"delete"`
+}
+
+// key - ключ правки. С file правка достанется только этому файлу, без него -
+// всем копиям текста: один и тот же комментарий в трёх файлах даёт один хэш.
+func (b batchEdit) key() string {
+	if b.File == "" {
+		return b.id()
+	}
+	return b.id() + "\t" + abs(b.File)
+}
+
+func abs(p string) string {
+	if a, err := filepath.Abs(p); err == nil {
+		return a
+	}
+	return p
 }
 
 func (b batchEdit) id() string {
@@ -162,7 +184,7 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 			fmt.Fprintf(os.Stderr, "строка %d: в text шаблон, а не текст\n", line)
 			return 2
 		}
-		want[b.id()] = b
+		want[b.key()] = b
 	}
 	if err := sc.Err(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -186,7 +208,11 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 			continue
 		}
 		for _, c := range cmts {
-			b, ok := want[baseline.Hash(c.Text)]
+			h := baseline.Hash(c.Text)
+			b, ok := want[h+"\t"+abs(p)]
+			if !ok {
+				b, ok = want[h]
+			}
 			if !ok {
 				continue
 			}
@@ -195,7 +221,7 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 				fmt.Fprintf(os.Stderr, "%s: %v\n", b.id(), err)
 				continue
 			}
-			found[b.id()] = true
+			found[b.key()] = true
 			edits = append(edits, e)
 		}
 	}
@@ -203,9 +229,9 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 		fmt.Fprintf(os.Stderr, "пропущено без правки: %d\n", skipped)
 	}
 	exit := 0
-	for h := range want {
-		if !found[h] {
-			fmt.Fprintf(os.Stderr, "блок %s не найден\n", h)
+	for k, b := range want {
+		if !found[k] {
+			fmt.Fprintf(os.Stderr, "блок %s не найден\n", b.id())
 			exit = 2
 		}
 	}
@@ -279,13 +305,19 @@ func plan(c code.Comment, src string, del bool, body string, maxLine int) (edit,
 		return edit{}, fmt.Errorf("%s: блок вне файла, смещения %d-%d", c.File, c.SO, c.EO)
 	}
 
+	// Сканер не для Go забирает в блок и \r: он часть перевода строки, а не текста
+	// комментария, и вырезать его нельзя - получатся смешанные концы строк.
+	eo := c.EO
+	if eo > c.SO && src[eo-1] == '\r' {
+		eo--
+	}
 	lineStart := strings.LastIndexByte(src[:c.SO], '\n') + 1
 	lineEnd := len(src)
-	if i := strings.IndexByte(src[c.EO:], '\n'); i >= 0 {
-		lineEnd = c.EO + i
+	if i := strings.IndexByte(src[eo:], '\n'); i >= 0 {
+		lineEnd = eo + i
 	}
 	prefix := src[lineStart:c.SO] // что на строке до комментария
-	suffix := src[c.EO:lineEnd]   // и что после него
+	suffix := src[eo:lineEnd]     // и что после него
 	ownLine := strings.TrimSpace(prefix) == ""
 	e := edit{file: c.File, line: c.Start, old: strings.Split(src[lineStart:lineEnd], "\n")}
 
@@ -293,7 +325,7 @@ func plan(c code.Comment, src string, del bool, body string, maxLine int) (edit,
 		if !ownLine {
 			return edit{}, fmt.Errorf("замена хвостового комментария не поддерживается, правь его вручную")
 		}
-		e.so, e.eo = lineStart, c.EO
+		e.so, e.eo = lineStart, eo
 		head := strings.SplitN(c.Raw, "\n", 2)[0]
 		e.new = strings.Join(renderComment(prefix, head, body, maxLine), nl(crlf(src)))
 		return e, nil
@@ -306,7 +338,7 @@ func plan(c code.Comment, src string, del bool, body string, maxLine int) (edit,
 		return e, nil
 	}
 	// Комментарий посреди кода: снимаем только его, код слева и справа остаётся.
-	e.so, e.eo = c.SO, c.EO
+	e.so, e.eo = c.SO, eo
 	if strings.TrimSpace(suffix) == "" {
 		e.so = lineStart + len(strings.TrimRight(prefix, " \t"))
 		e.eo = lineEnd

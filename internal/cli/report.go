@@ -228,9 +228,17 @@ func printMarkdown(items []code.Item, limit, files, blocks int) {
 	if len(shown) > 0 {
 		fmt.Print(mdHowTo)
 	}
+	copies := map[string]int{}
+	for _, it := range items {
+		copies[it.Hash]++
+	}
 	for _, it := range shown {
 		fmt.Printf("## %s\n", it.ID)
-		fmt.Printf("block %s | `%s` | %s | вес %d\n\n", it.Hash, it.Lang, it.Kind, it.Score)
+		fmt.Printf("block %s | `%s` | %s | вес %d", it.Hash, it.Lang, it.Kind, it.Score)
+		if copies[it.Hash] > 1 {
+			fmt.Printf(" | копий текста: %d", copies[it.Hash])
+		}
+		fmt.Print("\n\n")
 		for _, g := range groupFindings(it.Findings) {
 			mark := ""
 			if g.hard {
@@ -256,7 +264,7 @@ const mdHowTo = "Как править: команда есть под кажд�
 	"Текст даётся без `//` и `/* */` - маркер, отступ и перенос инструмент\n" +
 	"восстановит сам. Без `--write` печатается дифф, файл не меняется. Строки после\n" +
 	"первой правки съезжают, id блока - нет. Один и тот же текст в разных файлах -\n" +
-	"один блок: команда правит все его копии сразу.\n\n"
+	"один блок с одним id; команда ниже правит только свой файл.\n\n"
 
 // deleteOnly - правила, где решать нечего: такой блок удаляется целиком.
 // Значение true - удаляется и без модели, это и делает fix --auto.
