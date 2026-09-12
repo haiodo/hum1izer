@@ -29,6 +29,7 @@ const usage = `hum1izer - проверка текста, комментарие�
   hum1izer --code репозиторий      то же плюс последние коммиты, если там git
   hum1izer install --claude ...    поставить скилл для агента
   hum1izer init [путь]             создать .hum1izer.yaml с настройками проекта
+  hum1izer upgrade                 обновиться до последнего релиза с GitHub
 
 Флаги прозы:
   --genre   жанр текста: marketing (по умолчанию), academic, legal, fiction, news
@@ -78,6 +79,8 @@ func Run() int {
 			return skill.Run(os.Args[2:], Version)
 		case "init":
 			return runInit(os.Args[2:])
+		case "upgrade":
+			return runUpgrade(os.Args[2:])
 		}
 	}
 

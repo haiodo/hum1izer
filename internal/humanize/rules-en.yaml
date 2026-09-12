@@ -165,6 +165,85 @@ categories:
       - name: align with
         word_re: 'align(?:s|ed|ing)? with'
 
+  # Оттуда же, раздел "Shallow -ing riders". Конструкция, а не слово: к готовому
+  # факту через запятую привинчен причастный хвост, который ничего не добавляет.
+  # Самый сильный английский маркер из всех, что мы мерили, после fostering.
+  - name: 'Shallow -ing riders'
+    fix: 'Keep the fact, drop the -ing tail bolted onto it.'
+    lift: 69.3
+    rules:
+      - name: ', highlighting / underscoring / showcasing ...'
+        re: ',\s+(?:highlighting|underscoring|emphasizing|ensuring|reflecting|symbolizing|contributing\s+to|cultivating|fostering|encompassing|showcasing)\b'
+
+  # Реклама места, продукта или организации. Замер: commitment to 12.9,
+  # in the heart of 9.3, renowned 9.0, stunning 5.9; exemplifies, breathtaking и
+  # diverse array у человека не встретились ни разу. must-visit выброшен (1.2).
+  - name: 'Sales language'
+    fix: 'State what the thing is.'
+    lift: 6.7
+    rules:
+      - name: commitment to
+        word_re: 'commitment\s+to'
+      - name: in the heart of
+        word_re: 'in\s+the\s+heart\s+of'
+      - lit: renowned
+      - lit: stunning
+      - lit: breathtaking
+      - lit: exemplifies
+      - name: diverse array / range
+        word_re: 'diverse\s+(?:array|range)'
+
+  # "Связано с" без указания, как именно. connected to / in connection with
+  # выброшены: lift 1.01, у человека ровно так же часто.
+  - name: 'Vague connection'
+    fix: 'Name the relationship the source gives, or leave the wording alone.'
+    lift: 3.4
+    rules:
+      - name: associated / in association with
+        word_re: '(?:in\s+)?associat(?:ed|ion)\s+with'
+      - name: linked to / tied to
+        word_re: '(?:linked|tied)\s+to'
+
+  # Обычная мысль подана как скрытая истина. Замер слабый: fundamentally 3.4,
+  # остальные формулировки в корпусе почти не встретились, поэтому вес низкий.
+  - name: 'Deep-sounding sayings'
+    fix: 'Replace the saying with the specific claim.'
+    lift: 2.2
+    rules:
+      - lit: fundamentally
+      - name: the real question is
+        word_re: 'the\s+real\s+question\s+is'
+      - name: what really matters
+        word_re: 'what\s+really\s+matters'
+      - name: the deeper issue / problem / truth
+        word_re: 'the\s+deeper\s+(?:issue|problem|truth)'
+      - name: the heart of the matter
+        word_re: 'the\s+heart\s+of\s+the\s+matter'
+      - name: the language / currency / architecture of
+        word_re: 'the\s+(?:language|currency|architecture|anatomy)\s+of\s+\w+'
+
+  # Текст отбивается от возражения, которого никто не высказывал. Замер: 0.42 -
+  # у человека это встречается вдвое чаще, чем у машины. Правило оставлено как
+  # совет по стилю, веса при сортировке не получает.
+  - name: 'Arguing with no one'
+    fix: 'Remove the defense; if it holds a claim, state the claim.'
+    lift: 0.4
+    rules:
+      - name: to be clear,
+        word_re: 'to\s+be\s+clear\s*,'
+      - name: don't get me wrong
+        word_re: 'don.t\s+get\s+me\s+wrong'
+      - name: this is not to say
+        word_re: 'this\s+is\s+not\s+to\s+say'
+      - name: some might say / argue
+        word_re: 'some\s+(?:might|would|may)\s+(?:say|argue)'
+      - name: a tempting approach / one might be tempted
+        word_re: '(?:a\s+tempting\s+approach|one\s+might\s+be\s+tempted|it\s+would\s+be\s+easy\s+to)'
+      - name: you might think
+        word_re: 'you\s+might\s+think'
+      - name: i'm not saying / arguing
+        word_re: 'i.m\s+not\s+(?:saying|arguing)'
+
   # Хеджи сами по себе человеческая привычка; тель - когда их два и больше в
   # одном предложении. Отдельного правила на "стопку" в RE2 не выразить, поэтому
   # ловим характерные сцепки.
@@ -585,6 +664,8 @@ categories:
         word_re: 'research\s+(?:shows|suggests|indicates)'
       - name: 'industry leaders agree/believe/say'
         word_re: 'industry\s+leaders\s+(?:agree|believe|say)'
+      - name: 'industry reports / analysts'
+        word_re: 'industry\s+(?:reports|analysts)'
 
   - name: 'Hollow intensifiers'
     fix: 'Cut the intensifier; it adds no information.'

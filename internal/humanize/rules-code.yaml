@@ -102,6 +102,19 @@ categories:
       - name: временно / пока что / потом переделать
         word_re: '(?:временн(?:о|ый|ая|ое)|пока\s+(?:что|так)|потом\s+(?:переделать|убрать|заменить)|убрать\s+позже|легаси)'
 
+  # blader/humanizer, раздел "Writing about the previous version": комментарий
+  # описывает, что было до правки, вместо текущего поведения. Место такому в
+  # ченджлоге, а в коде это устаревает с первым же рефакторингом.
+  - name: Комментарий про прошлую версию
+    fix: Опиши текущее поведение - что было раньше, помнит git
+    rules:
+      - name: was previously / formerly
+        re: '(?i)\b(?:was|were|is|are)\s+(?:previously|formerly)\b'
+      - name: replaces the old / instead of the previous
+        re: '(?i)\b(?:replaces?|replaced)\s+the\s+(?:old|previous|former|legacy)\b|\binstead\s+of\s+the\s+(?:old|previous|former)\b'
+      - name: раньше было / вместо старого
+        re: '(?i)(?:раньше|ранее)\s+(?:было|был|тут|здесь|мы)|вместо\s+(?:старого|прежнего|предыдущего)'
+
   - name: Эмодзи в комментарии
     fix: Убери эмодзи - в дифф и в grep они попадают шумом
     rules:

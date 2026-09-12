@@ -16,9 +16,12 @@ var body string
 
 const name = "hum1izer"
 
-const description = "Проверка прозы, комментариев в коде и сообщений коммитов на канцелярит, " +
-	"штампы и следы генерации. Бери, когда просят сделать комментарии человечнее, " +
-	"почистить AI-слоп, отревьюить текст или коммиты."
+// Описание двуязычное: по нему агент решает, брать скилл или нет, а просьба
+// приходит то на английском, то на русском.
+const description = "Check prose, code comments and commit messages for officialese, stock " +
+	"phrases and traces of AI generation. Use when asked to make comments sound human, " +
+	"clean up AI slop, or review text or commit messages. Русские триггеры: сделать " +
+	"комментарии человечнее, почистить AI-слоп, отревьюить текст или коммиты."
 
 // Target - куда и с какой шапкой класть скилл.
 type Target struct {
