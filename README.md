@@ -517,6 +517,31 @@ damaging someone else's spot.
 `--auto` deletes what needs no judgement: commented-out code and empty shells
 like `// constructor`.
 
+### Blocks you decided to keep
+
+Not every finding is worth a fix. `--keep` writes the block into the baseline
+instead of editing it, so the next run stays quiet about it:
+
+```bash
+hum1izer fix --block 55dc2ad977ba --keep --write ./src      # takes baseline from .hum1izer.yaml
+hum1izer fix --block 55dc2ad977ba --keep --baseline .hum1izer-baseline --write ./src
+```
+
+In a batch it is `{"block":"55dc2ad977ba","keep":true}` alongside the real
+edits. The snapshot holds the text, so changing the comment later brings the
+finding back.
+
+When the decision belongs in the code and not in a snapshot - a commented-out
+block kept on purpose, a table, a foreign format - put `hum1izer:keep`
+anywhere in the comment:
+
+```go
+// hum1izer:keep - the old query, still needed when the index is rebuilt
+// SELECT id FROM docs WHERE ...
+```
+
+The whole block is then skipped, in every mode, with no baseline involved.
+
 ## Custom rules
 
 The rules live in three files, all embedded in the binary:

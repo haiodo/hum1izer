@@ -159,6 +159,22 @@ Repeat until it reaches zero or stops falling.
    report, the hash no longer matches and the tool refuses - re-run the check
    instead of guessing.
 
+   Some of the thirty will be fine as they are. Do not fix those and do not
+   leave them for the next run either - park them:
+
+   ```bash
+   hum1izer fix --block 55dc2ad977ba --keep --write ./src
+   ```
+
+   That writes the block into the baseline (`--baseline <file>`, or the
+   `baseline` entry in `.hum1izer.yaml`), so the next run stays quiet about
+   it; change the text later and the finding comes back. In a batch it is
+   `{"block":"55dc2ad977ba","keep":true}` next to the real fixes. When the
+   decision belongs in the code itself - a commented-out block kept on
+   purpose, a table, a foreign format - put the word `hum1izer:keep` into the
+   comment instead: the tool then skips that block everywhere, with no
+   baseline involved.
+
    Never edit comments with a script over the whole repository. A regex sweep
    that blanks lines breaks formatting in files nobody looked at, and the
    damage is found later by someone else.

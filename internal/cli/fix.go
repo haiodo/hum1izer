@@ -22,6 +22,7 @@ const fixUsage = `hum1izer fix - применить правку к блоку �
   hum1izer fix --block <хэш> --delete путь        удалить блок целиком
   hum1izer fix --block <хэш> --text "<текст>" путь  заменить текст блока
   hum1izer fix --block <хэш> --text - путь        то же, текст со stdin
+  hum1izer fix --block <хэш> --keep путь           не править: внести в снимок
   hum1izer fix --auto путь                        удалить механическое
   hum1izer fix --batch - путь                     пачкой: JSONL со stdin
 
@@ -37,6 +38,10 @@ const fixUsage = `hum1izer fix - применить правку к блоку �
 Одинаковый текст в разных файлах - один блок с одним хэшем. Без file правка
 уходит во все его копии, с file - только в указанный.
 
+Посмотрел и решил не трогать - {"block":"...","keep":true}: блок уходит в снимок
+(--baseline или baseline из .hum1izer.yaml) и в следующем прогоне не всплывает.
+Оставить пометку прямо в коде - hum1izer:keep в тексте комментария.
+
 Блок ищется по хэшу, а не по номеру строки: после первой же правки строки
 съезжают, хэш нет. Текст задаётся без // и /* */ - маркеры, отступ и перенос
 инструмент восстановит сам.
@@ -50,6 +55,8 @@ func runFix(args []string) int {
 	text := fs.String("text", "", "новый текст комментария, - читает stdin")
 	auto := fs.Bool("auto", false, "удалить механическое: закомментированный код и комментарии-пустышки")
 	batch := fs.String("batch", "", "файл JSONL с правками, - читает stdin")
+	keep := fs.Bool("keep", false, "не править: внести блок в снимок как принятый")
+	basePath := fs.String("baseline", "", "файл снимка для --keep (по умолчанию из .hum1izer.yaml)")
 	write := fs.Bool("write", false, "применить правку")
 	maxLine := fs.Int("max-line", 100, "переносить длинные строки при замене")
 	if err := fs.Parse(args); err != nil {
@@ -62,12 +69,19 @@ func runFix(args []string) int {
 
 	switch {
 	case *batch != "":
-		return fixBatch(root, *batch, *write, *maxLine)
+		return fixBatch(root, *batch, *basePath, *write, *maxLine)
 	case *auto:
 		return fixAuto(root, *write)
 	case *block == "":
 		fs.Usage()
 		return 2
+	case *keep:
+		blocks, err := locateAll(root, *block)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 2
+		}
+		return keepBlocks(root, *basePath, blocks, *write)
 	case *del && *text != "":
 		fmt.Fprintln(os.Stderr, "--delete и --text вместе не имеют смысла")
 		return 2
@@ -119,6 +133,7 @@ type batchEdit struct {
 	File   string `json:"file"`
 	Text   string `json:"text"`
 	Delete bool   `json:"delete"`
+	Keep   bool   `json:"keep"`
 }
 
 // key - ключ правки. С file правка достанется только этому файлу, без него -
@@ -146,7 +161,7 @@ func (b batchEdit) id() string {
 
 // fixBatch применяет пачку правок за один обход дерева: на большом репозитории
 // обход стоит секунды, и делать его на каждую правку незачем.
-func fixBatch(root, src string, write bool, maxLine int) int {
+func fixBatch(root, src, basePath string, write bool, maxLine int) int {
 	in := os.Stdin
 	if src != "-" {
 		f, err := os.Open(src)
@@ -176,11 +191,11 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 			fmt.Fprintf(os.Stderr, "строка %d: нет поля block или hash\n", line)
 			return 2
 		}
-		if b.Text == "" && !b.Delete {
+		if b.Text == "" && !b.Delete && !b.Keep {
 			skipped++
 			continue
 		}
-		if !b.Delete && placeholder(b.Text) {
+		if !b.Delete && !b.Keep && placeholder(b.Text) {
 			fmt.Fprintf(os.Stderr, "строка %d: в text шаблон, а не текст\n", line)
 			return 2
 		}
@@ -197,6 +212,7 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 		return 2
 	}
 	var edits []edit
+	var kept []code.Comment
 	found := map[string]bool{}
 	for _, p := range paths {
 		cmts, err := code.ExtractComments(p)
@@ -216,12 +232,17 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 			if !ok {
 				continue
 			}
+			found[b.key()] = true
+			if b.Keep {
+				kept = append(kept, c)
+				continue
+			}
 			e, err := plan(c, string(raw), b.Delete, b.Text, maxLine)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: %v\n", b.id(), err)
+				found[b.key()] = false
 				continue
 			}
-			found[b.key()] = true
 			edits = append(edits, e)
 		}
 	}
@@ -233,6 +254,11 @@ func fixBatch(root, src string, write bool, maxLine int) int {
 		if !found[k] {
 			fmt.Fprintf(os.Stderr, "блок %s не найден\n", b.id())
 			exit = 2
+		}
+	}
+	if len(kept) > 0 {
+		if rc := keepBlocks(root, basePath, kept, write); rc != 0 {
+			return rc
 		}
 	}
 	if rc := apply(edits, write); rc != 0 {
@@ -367,47 +393,55 @@ func nl(crlf bool) string {
 	return "\n"
 }
 
-// renderComment собирает комментарий обратно: отступ и маркер берутся из исходного
-// блока, текст переносится по maxLine.
+// renderComment собирает комментарий обратно. Маркер не меняется: из <!-- -->
+// нельзя сделать // - разметка выведет его на экран, а из /** нельзя /*.
 func renderComment(indent, head, body string, maxLine int) []string {
+	t := strings.TrimLeft(head, " \t")
+	switch {
+	case strings.HasPrefix(t, "<!--"):
+		return renderFenced(indent, "<!--", "-->", "  ", body, maxLine)
+	case strings.HasPrefix(t, "/**"):
+		return renderFenced(indent, "/**", "*/", " * ", body, maxLine)
+	case strings.HasPrefix(t, "/*"):
+		return renderFenced(indent, "/*", "*/", " * ", body, maxLine)
+	}
 	marker := "//"
-	switch t := strings.TrimLeft(head, " \t"); {
+	switch {
 	case strings.HasPrefix(t, "///"):
 		marker = "///"
 	case strings.HasPrefix(t, "#"):
 		marker = "#"
-	case strings.HasPrefix(t, "/*"):
-		marker = "*"
 	}
+	out := make([]string, 0, 4)
+	for _, ch := range wrap(body, lineWidth(maxLine, len(indent)+len(marker)+1)) {
+		out = append(out, indent+marker+" "+ch)
+	}
+	return out
+}
 
-	// У блочного комментария строка начинается с " * " - три символа, не один.
-	// У блочного комментария строка начинается с " * " - три символа, не один.
-	lead := len(marker) + 1
-	if marker == "*" {
-		lead = 3
+// renderFenced - комментарий с открывающим и закрывающим маркером. В одну
+// строку он собирается, только если вместе с закрывающим влезает в maxLine.
+func renderFenced(indent, open, close, inner, body string, maxLine int) []string {
+	chunks := wrap(body, lineWidth(maxLine, len(indent)+len(inner)))
+	if len(chunks) == 1 && len(indent)+len(open)+len(close)+2+len([]rune(chunks[0])) <= maxLine {
+		return []string{indent + open + " " + chunks[0] + " " + close}
 	}
-	width := maxLine - len(indent) - lead
-	if width < 20 {
-		width = 20
-	}
-	chunks := wrap(body, width)
-
-	if marker != "*" {
-		out := make([]string, 0, len(chunks))
-		for _, ch := range chunks {
-			out = append(out, indent+marker+" "+ch)
-		}
-		return out
-	}
-	// Однострочная форма добавляет ещё " */" в хвост: не влезли - собираем блок.
-	if len(chunks) == 1 && len(indent)+6+len([]rune(chunks[0])) <= maxLine {
-		return []string{indent + "/* " + chunks[0] + " */"}
-	}
-	out := []string{indent + "/**"}
+	out := []string{indent + open}
 	for _, ch := range chunks {
-		out = append(out, indent+" * "+ch)
+		out = append(out, indent+inner+ch)
 	}
-	return append(out, indent+" */")
+	tail := close
+	if strings.HasSuffix(inner, "* ") {
+		tail = " " + close
+	}
+	return append(out, indent+tail)
+}
+
+func lineWidth(maxLine, lead int) int {
+	if w := maxLine - lead; w > 20 {
+		return w
+	}
+	return 20
 }
 
 func wrap(s string, width int) []string {
@@ -428,19 +462,99 @@ func wrap(s string, width int) []string {
 	return append(out, line)
 }
 
-// fixAuto удаляет то, что чинится без модели. Список - deleteOnly, значение
-// true там и означает "можно без модели".
-func fixAuto(root string, write bool) int {
-	cs := code.CodeSets{}
+// codeSets - правила и пороги длины те же, что у основного прогона: иначе в
+// снимок попадёт не то правило, которое видел автор в отчёте.
+func codeSets(cfg config.Config) (code.CodeSets, error) {
+	cs := code.CodeSets{MaxLines: 2, MaxLineLen: 100}
+	if cfg.Comments.MaxLines != nil {
+		cs.MaxLines = *cfg.Comments.MaxLines
+	}
+	if cfg.Comments.MaxLine != nil {
+		cs.MaxLineLen = *cfg.Comments.MaxLine
+	}
 	var err error
 	for _, set := range []struct {
 		dst  **humanize.RuleSet
 		name string
 	}{{&cs.RU, "ru"}, {&cs.EN, "en"}, {&cs.Code, "code"}} {
 		if *set.dst, err = humanize.LoadBuiltin(set.name); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 2
+			return cs, err
 		}
+	}
+	return cs, nil
+}
+
+// keepBlocks вносит блоки в снимок: автор посмотрел и решил оставить как есть.
+// Пишутся те правила, что срабатывают сейчас, - поправят текст, находка вернётся.
+func keepBlocks(root, basePath string, cmts []code.Comment, write bool) int {
+	cfg, err := config.Find(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	path := basePath
+	if path == "" && cfg.Baseline != "" {
+		path = cfg.Baseline
+		if cfg.Path != "" && !filepath.IsAbs(path) {
+			path = filepath.Join(filepath.Dir(cfg.Path), path)
+		}
+	}
+	if path == "" {
+		fmt.Fprintln(os.Stderr, "--keep: укажи --baseline <файл> или baseline в .hum1izer.yaml")
+		return 2
+	}
+	set, err := baseline.Load(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	cs, err := codeSets(cfg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+
+	added := 0
+	for _, c := range cmts {
+		hash := baseline.Hash(c.Text)
+		rules := code.CheckComment(cs, c, "code")
+		if len(rules) == 0 {
+			fmt.Printf("= %s %s: находок нет, в снимок нечего класть\n", hash, c.File)
+			continue
+		}
+		n := 0
+		for _, f := range rules {
+			if set.Add(baseline.Entry{Hash: hash, Rule: f.Rule}) {
+				n++
+			}
+		}
+		added += n
+		fmt.Printf("keep %s %s (+%d)\n", hash, c.File, n)
+	}
+	if !write {
+		fmt.Printf("\nпредпросмотр: --write запишет %d строк в %s\n", added, path)
+		return 0
+	}
+	if err := set.Save(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	fmt.Printf("снимок %s: +%d\n", path, added)
+	return 0
+}
+
+// fixAuto удаляет то, что чинится без модели. Список - deleteOnly, значение
+// true там и означает "можно без модели".
+func fixAuto(root string, write bool) int {
+	cfg, err := config.Find(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	cs, err := codeSets(cfg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
 	}
 	paths, err := walkPaths(root)
 	if err != nil {

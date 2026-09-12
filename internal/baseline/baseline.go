@@ -37,9 +37,10 @@ func Code(rule string) string {
 }
 
 type Set struct {
-	Path string
-	keys map[string]bool
-	seen map[string]bool
+	Path   string
+	keys   map[string]bool
+	seen   map[string]bool
+	legend map[string]string // код -> имя правила, чтобы переписать файл с той же расшифровкой
 }
 
 // Hash - устойчивый ключ текста комментария. Пробелы схлопываются, чтобы
@@ -51,7 +52,7 @@ func Hash(text string) string {
 
 // Load читает снимок. Отсутствие файла не ошибка: это первый прогон.
 func Load(path string) (*Set, error) {
-	s := &Set{Path: path, keys: map[string]bool{}, seen: map[string]bool{}}
+	s := &Set{Path: path, keys: map[string]bool{}, seen: map[string]bool{}, legend: map[string]string{}}
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
 		return s, nil
@@ -72,6 +73,9 @@ func Load(path string) (*Set, error) {
 			v3 = true
 		}
 		if t == "" || strings.HasPrefix(t, "#") {
+			if f := strings.Fields(strings.TrimPrefix(t, "#")); len(f) > 1 && len(f[0]) == 6 {
+				s.legend[f[0]] = strings.Join(f[1:], " ")
+			}
 			continue
 		}
 		f := strings.Split(t, "\t")
@@ -101,6 +105,29 @@ func (s *Set) Known(e Entry) bool {
 
 func (s *Set) Size() int { return len(s.keys) }
 
+// Add вносит находку в снимок: автор посмотрел и решил оставить как есть.
+func (s *Set) Add(e Entry) bool {
+	k := e.Key()
+	s.seen[k] = true
+	if s.keys[k] {
+		return false
+	}
+	s.keys[k] = true
+	s.legend[Code(e.Rule)] = e.Rule
+	return true
+}
+
+// Save переписывает снимок с теми же расшифровками правил, что были в файле.
+func (s *Set) Save() error {
+	byHash := map[string][]string{}
+	for k := range s.keys {
+		if h, code, ok := strings.Cut(k, "\t"); ok {
+			byHash[h] = append(byHash[h], code)
+		}
+	}
+	return writeFile(s.Path, byHash, s.legend)
+}
+
 // Fixed - находки из снимка, которых больше нет. Это прогресс, его видно.
 func (s *Set) Fixed() int {
 	n := 0
@@ -115,28 +142,39 @@ func (s *Set) Fixed() int {
 // Write пишет снимок отсортированным, по строке на комментарий: файл кладётся в
 // git, диффы должны читаться.
 func Write(path string, entries []Entry) error {
-	rules := map[string]map[string]bool{}
+	byHash := map[string][]string{}
+	legend := map[string]string{}
+	seen := map[string]bool{}
 	for _, e := range entries {
-		if rules[e.Hash] == nil {
-			rules[e.Hash] = map[string]bool{}
+		k := e.Key()
+		if seen[k] {
+			continue
 		}
-		rules[e.Hash][e.Rule] = true
+		seen[k] = true
+		byHash[e.Hash] = append(byHash[e.Hash], Code(e.Rule))
+		legend[Code(e.Rule)] = e.Rule
 	}
-	hashes := make([]string, 0, len(rules))
-	for h := range rules {
+	return writeFile(path, byHash, legend)
+}
+
+func writeFile(path string, byHash map[string][]string, legend map[string]string) error {
+	hashes := make([]string, 0, len(byHash))
+	for h := range byHash {
 		hashes = append(hashes, h)
 	}
 	sort.Strings(hashes)
 
-	legend := map[string]string{}
-	for _, rs := range rules {
-		for r := range rs {
-			legend[Code(r)] = r
+	used := map[string]bool{}
+	for _, codes := range byHash {
+		for _, c := range codes {
+			used[c] = true
 		}
 	}
-	codes := make([]string, 0, len(legend))
-	for c := range legend {
-		codes = append(codes, c)
+	codes := make([]string, 0, len(used))
+	for c := range used {
+		if legend[c] != "" {
+			codes = append(codes, c)
+		}
 	}
 	sort.Strings(codes)
 
@@ -148,13 +186,9 @@ func Write(path string, entries []Entry) error {
 	}
 	b.WriteString("#\n")
 	for _, h := range hashes {
-		line := make([]string, 0, len(rules[h])+1)
-		line = append(line, h)
-		for r := range rules[h] {
-			line = append(line, Code(r))
-		}
-		sort.Strings(line[1:])
-		fmt.Fprintln(&b, strings.Join(line, "\t"))
+		line := byHash[h]
+		sort.Strings(line)
+		fmt.Fprintln(&b, h+"\t"+strings.Join(line, "\t"))
 	}
 	if dir := filepath.Dir(path); dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

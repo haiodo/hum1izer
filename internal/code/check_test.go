@@ -497,3 +497,20 @@ func TestLengthCountsProseOnly(t *testing.T) {
 		t.Error("строка со ссылкой оштрафована за длину")
 	}
 }
+
+func TestKeepTagMutesBlock(t *testing.T) {
+	cs := CodeSets{MaxLines: 2, MaxLineLen: 100}
+	var err error
+	if cs.Code, err = humanize.LoadBuiltin("code"); err != nil {
+		t.Fatal(err)
+	}
+	noisy := Comment{Lines: 1, Text: "old := compute()\nvar x = 1", Lang: "go"}
+	if len(CheckComment(cs, noisy, "code")) == 0 {
+		t.Fatal("закомментированный код должен ловиться, иначе тест ни о чём")
+	}
+	kept := noisy
+	kept.Text = "hum1izer:keep нужен под рукой\n" + noisy.Text
+	if got := CheckComment(cs, kept, "code"); len(got) != 0 {
+		t.Errorf("блок с hum1izer:keep всё равно даёт находки: %+v", got)
+	}
+}

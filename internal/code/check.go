@@ -42,7 +42,7 @@ func CheckComment(cs CodeSets, c Comment, genre string) []Finding {
 	if humanize.CyrillicShare(c.Text) >= 0.3 {
 		prose = cs.RU
 	}
-	if isLicenseHeader(c) || pragmaRe.MatchString(c.Text) {
+	if isLicenseHeader(c) || pragmaRe.MatchString(c.Text) || keepRe.MatchString(c.Text) {
 		return nil
 	}
 	var out []Finding
@@ -78,6 +78,10 @@ func docLead(c Comment) bool {
 }
 
 var (
+	// hum1izer:keep - решение автора оставить блок как есть: закомментированный
+	// кусок, который нужен под рукой, длинная таблица, чужой формат.
+	keepRe = regexp.MustCompile(`(?i)hum1izer[:-]keep`)
+
 	// Прагма - настройка инструмента, а не проза: скилл её и так велит не трогать.
 	pragmaRe  = regexp.MustCompile(`^\s*(?:eslint-|@ts-|prettier-|istanbul |c8 |v8 |go:|nolint|noinspection|type-coverage:|deepcode |codeql\[)`)
 	spdxRe    = regexp.MustCompile(`SPDX-License-Identifier`)

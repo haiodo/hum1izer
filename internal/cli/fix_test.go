@@ -139,7 +139,7 @@ func TestBatchTakesHashAndSkipsUntouched(t *testing.T) {
 	if err := os.WriteFile(batch, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rc := fixBatch(dir, batch, true, 100); rc != 0 {
+	if rc := fixBatch(dir, batch, "", true, 100); rc != 0 {
 		t.Fatalf("пачка вернула %d, ожидался 0", rc)
 	}
 	got, _ := os.ReadFile(path)
@@ -312,7 +312,7 @@ func TestBatchFileNarrowsEditToOneCopy(t *testing.T) {
 	if err := os.WriteFile(batch, []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rc := fixBatch(dir, batch, true, 100); rc != 0 {
+	if rc := fixBatch(dir, batch, "", true, 100); rc != 0 {
 		t.Fatalf("пачка вернула %d, ожидался 0", rc)
 	}
 	a, _ := os.ReadFile(filepath.Join(dir, "a.go"))
@@ -342,7 +342,7 @@ func TestBatchWithoutFileEditsEveryCopy(t *testing.T) {
 	if err := os.WriteFile(batch, []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rc := fixBatch(dir, batch, true, 100); rc != 0 {
+	if rc := fixBatch(dir, batch, "", true, 100); rc != 0 {
 		t.Fatalf("пачка вернула %d, ожидался 0", rc)
 	}
 	for _, name := range []string{"a.go", "b.go"} {
@@ -397,5 +397,71 @@ func TestPlanDeletesInlineCommentInCRLFFile(t *testing.T) {
 	}
 	if strings.Contains(strings.ReplaceAll(got, "\r\n", ""), "\n") {
 		t.Errorf("смешанные концы строк:\n%q", got)
+	}
+}
+
+func TestRenderCommentKeepsMarkerKind(t *testing.T) {
+	short := renderComment("  ", "  <!-- старый -->", "короткий текст", 100)
+	if len(short) != 1 || short[0] != "  <!-- короткий текст -->" {
+		t.Errorf("html-комментарий в одну строку: %q", short)
+	}
+
+	long := renderComment("", "<!-- старый -->", strings.Repeat("слово ", 30), 40)
+	if long[0] != "<!--" || long[len(long)-1] != "-->" {
+		t.Errorf("html-комментарий блоком: %q", long)
+	}
+	for _, l := range long {
+		if strings.HasPrefix(strings.TrimSpace(l), "//") {
+			t.Errorf("разметка получила // вместо <!-- -->: %q", long)
+		}
+	}
+
+	// Обычный /* не должен превращаться в /**: это разные вещи для IDE и доков.
+	plain := renderComment("", "/* старый */", strings.Repeat("слово ", 30), 40)
+	if plain[0] != "/*" {
+		t.Errorf("обычный блок стал %q", plain[0])
+	}
+	doc := renderComment("", "/** старый */", strings.Repeat("слово ", 30), 40)
+	if doc[0] != "/**" {
+		t.Errorf("doc-блок потерял вторую звезду: %q", doc[0])
+	}
+	docShort := renderComment("", "/** старый */", "короткий текст", 100)
+	if len(docShort) != 1 || docShort[0] != "/** короткий текст */" {
+		t.Errorf("однострочный doc-блок: %q", docShort)
+	}
+}
+
+func TestKeepPutsBlockIntoBaseline(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.go")
+	src := "package demo\n\n// old := compute()\nvar x = 1\n"
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmts, err := code.ExtractComments(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := baseline.Hash(cmts[0].Text)
+	base := filepath.Join(dir, "snapshot")
+
+	batch := filepath.Join(dir, "work.jsonl")
+	if err := os.WriteFile(batch, []byte(`{"hash":"`+hash+`","keep":true}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rc := fixBatch(dir, batch, base, true, 100); rc != 0 {
+		t.Fatalf("пачка вернула %d, ожидался 0", rc)
+	}
+
+	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), "old := compute()") {
+		t.Error("keep не должен править файл")
+	}
+	set, err := baseline.Load(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Known(baseline.Entry{Hash: hash, Rule: "Закомментированный код"}) {
+		t.Errorf("блок не попал в снимок: %s", base)
 	}
 }
