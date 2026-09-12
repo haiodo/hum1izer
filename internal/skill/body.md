@@ -180,7 +180,12 @@ Repeat until it reaches zero or stops falling.
    damage is found later by someone else.
 5. Check the facts: the fix must not introduce a single fact that wasn't in
    the source, and must not drop a single one that was there. A lost fact
-   is as much an error as an invented one.
+   is as much an error as an invented one. The tempting cut is the longest
+   clause - and that is usually the fact: which records are ignored, why the
+   neighbouring branches are deliberately not merged, the ticket that says
+   when the disabled test comes back. Shorten the wording, never the content;
+   if the content will not fit the line budget, keep it and `--keep` the
+   block.
 6. Run the check again. Repeat while `remaining` is dropping.
 
 Stop when `remaining` reaches zero or hasn't changed for two passes in a
