@@ -30,6 +30,7 @@ const usage = `hum1izer - проверка текста, комментарие�
   hum1izer install --claude ...    поставить скилл для агента
   hum1izer init [путь]             создать .hum1izer.yaml с настройками проекта
   hum1izer upgrade                 обновиться до последнего релиза с GitHub
+  hum1izer fix --block <хэш> ...   удалить или заменить блок комментария
 
 Флаги прозы:
   --genre   жанр текста: marketing (по умолчанию), academic, legal, fiction, news
@@ -81,6 +82,8 @@ func Run() int {
 			return runInit(os.Args[2:])
 		case "upgrade":
 			return runUpgrade(os.Args[2:])
+		case "fix":
+			return runFix(os.Args[2:])
 		}
 	}
 
@@ -350,12 +353,11 @@ func runCode(args []string, o codeOpts) int {
 // applyBaseline оставляет только новые находки. Код возврата 1 - за новое, а не
 // за жёсткое: с тысячей существующих находок иначе не встроиться в CI.
 func applyBaseline(o codeOpts, items []code.Item) ([]code.Item, int, error) {
-	rel := relativeTo(o.baseline)
 	if o.writeBaseline {
 		var all []baseline.Entry
 		for _, it := range items {
 			for _, f := range it.Findings {
-				all = append(all, baseline.Entry{Hash: it.Hash, Rule: f.Rule, File: rel(it.File)})
+				all = append(all, baseline.Entry{Hash: it.Hash, Rule: f.Rule})
 			}
 		}
 		if err := baseline.Write(o.baseline, all); err != nil {
@@ -374,7 +376,7 @@ func applyBaseline(o codeOpts, items []code.Item) ([]code.Item, int, error) {
 	for _, it := range items {
 		kept := it.Findings[:0:0]
 		for _, f := range it.Findings {
-			if base.Known(baseline.Entry{Hash: it.Hash, Rule: f.Rule, File: rel(it.File)}) {
+			if base.Known(baseline.Entry{Hash: it.Hash, Rule: f.Rule}) {
 				continue
 			}
 			kept = append(kept, f)
@@ -393,26 +395,6 @@ func applyBaseline(o codeOpts, items []code.Item) ([]code.Item, int, error) {
 		exit = 1
 	}
 	return fresh, exit, nil
-}
-
-// relativeTo: пути в снимке считаются от каталога снимка, иначе файл нельзя
-// положить в git - у каждого он лежит по своему абсолютному пути.
-func relativeTo(basePath string) func(string) string {
-	dir, err := filepath.Abs(filepath.Dir(basePath))
-	if err != nil {
-		return func(p string) string { return p }
-	}
-	return func(p string) string {
-		abs, err := filepath.Abs(p)
-		if err != nil {
-			return p
-		}
-		r, err := filepath.Rel(dir, abs)
-		if err != nil {
-			return filepath.ToSlash(p)
-		}
-		return filepath.ToSlash(r)
-	}
 }
 
 // allowed отсеивает то, что проект отключил в .hum1izer.yaml.

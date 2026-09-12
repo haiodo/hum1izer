@@ -94,8 +94,32 @@ One block per comment, the dirtiest first. stderr shows
    the shell, keep the statement), **REPLACE** (the same idea, shorter and
    more precise), **SPLIT** (the block covers different things, move part
    of it to its own code).
-4. Apply the fix by an exact match on this text. Line numbers shift after
-   the very first fix, the comment text does not.
+4. Apply the fix with the tool, not by hand. The block is addressed by the
+   hash from the report header (`55dc2ad977ba` above), never by line number:
+
+   ```bash
+   hum1izer fix --block 55dc2ad977ba --text "Причина, а не пересказ" --write ./src
+   hum1izer fix --block a832aeaac8cf --delete --write ./src
+   ```
+
+   Several at once - one JSON per line, the tree is walked once:
+
+   ```bash
+   printf '%s\n' '{"block":"55dc2ad977ba","text":"..."}' \
+                  '{"block":"a832aeaac8cf","delete":true}' |
+     hum1izer fix --batch - --write ./src
+   ```
+
+   Give the prose only. The tool restores the marker, the indent and the
+   wrap, deletes whole lines without leaving blanks, and keeps the code on a
+   line that also held a trailing comment. Without `--write` it prints the
+   diff and changes nothing. If the block's text has changed since the
+   report, the hash no longer matches and the tool refuses - re-run the check
+   instead of guessing.
+
+   Never edit comments with a script over the whole repository. A regex sweep
+   that blanks lines breaks formatting in files nobody looked at, and the
+   damage is found later by someone else.
 5. Check the facts: the fix must not introduce a single fact that wasn't in
    the source, and must not drop a single one that was there. A lost fact
    is as much an error as an invented one.
@@ -212,6 +236,10 @@ disabled in the project, that's the norm for this project.
 hum1izer init          # создать файл настроек, вписав найденные языки
 hum1izer init --print  # посмотреть, ничего не записывая
 ```
+
+`hum1izer fix --auto ./src` deletes what needs no judgement at all:
+commented-out code and empty-shell comments like `// constructor`. Same rule -
+preview first, `--write` after.
 
 If the project has a snapshot (`--baseline` or `baseline:` in the
 settings), a run shows only new findings. Don't touch the old ones without

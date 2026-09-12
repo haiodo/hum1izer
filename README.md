@@ -336,16 +336,24 @@ hum1izer --code --baseline .hum1izer-baseline --write-baseline .   # запис�
 hum1izer --code --baseline .hum1izer-baseline .                    # проверить
 ```
 
-The file is committed to git. It is sorted and stores relative paths so that
-diffs are readable:
+The file is committed to git. One line per comment, sorted by hash, with the
+rule codes spelled out in the header:
 
 ```
-# hum1izer baseline v1
-55dc2ad977ba	TODO без владельца	internal/code/check.go
+# hum1izer baseline v3
+#
+# 073a77 Длинная строка комментария
+# c3a286 TODO без владельца
+#
+55dc2ad977ba	c3a286	073a77
 ```
 
 The key is a hash of the comment text, not the line number: code can be
-moved and re-indented, and the finding stays the same. Edit the comment and
+moved and re-indented, and the finding stays the same. There is no path in the
+snapshot, and rules are stored as codes rather than names: on a repository with
+two thousand findings that is 35 KB instead of 283. The flip side is that a copy
+of the same comment in a new file counts as known. Snapshots in v1 and v2 format
+are still read. Edit the comment and
 it counts as new - which is correct: if you touched it, clean it up.
 
 stderr prints `в базе 1200, новых 0, исправлено 7` - progress is visible,
@@ -433,6 +441,36 @@ measurements. Genre matters more than weight. Four rules for which our
 corpus didn't have enough hits kept the borrowed values from the
 humanizer-ru catalog - they are marked with a comment directly in
 `rules.yaml`.
+
+## Fixing by hash
+
+The tool not only shows findings, it applies the fix, so that a model doesn't
+invent its own way of editing the file:
+
+```bash
+hum1izer fix --block 55dc2ad977ba --text "The reason, not a restatement" ./src   # preview
+hum1izer fix --block 55dc2ad977ba --text "..." --write ./src                     # apply
+hum1izer fix --block a832aeaac8cf --delete --write ./src                         # delete the block
+hum1izer fix --auto ./src                                                        # mechanical only
+```
+
+In bulk - one JSON per line, the tree is walked once:
+
+```bash
+printf '%s\n' '{"block":"55dc2ad977ba","text":"new text"}' \
+               '{"block":"a832aeaac8cf","delete":true}' |
+  hum1izer fix --batch - --write ./src
+```
+
+You give the prose only: the tool restores the marker, the indent and the wrap
+at `--max-line`. Deleting removes whole lines and leaves no blanks behind, and
+if the line also held code with a trailing comment, the code stays. The block is
+addressed by hash, so the edit does not depend on line numbers: if the text has
+changed since the report, the hash won't match and the tool refuses instead of
+damaging someone else's spot.
+
+`--auto` deletes what needs no judgement: commented-out code and empty shells
+like `// constructor`.
 
 ## Custom rules
 

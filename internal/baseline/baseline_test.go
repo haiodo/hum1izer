@@ -21,7 +21,7 @@ func TestMissingFileIsEmptySet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("первый прогон стал ошибкой: %v", err)
 	}
-	if s.Size() != 0 || s.Known(Entry{"a", "b", "c"}) {
+	if s.Size() != 0 || s.Known(Entry{"a", "b"}) {
 		t.Error("пустой снимок что-то знает")
 	}
 }
@@ -29,19 +29,25 @@ func TestMissingFileIsEmptySet(t *testing.T) {
 func TestRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "base.txt")
 	want := []Entry{
-		{"aaaaaaaaaaaa", "Баннер-разделитель", "b.go"},
-		{"bbbbbbbbbbbb", "TODO без владельца", "a.go"},
-		{"bbbbbbbbbbbb", "TODO без владельца", "a.go"}, // дубль схлопывается
+		{"aaaaaaaaaaaa", "Баннер-разделитель"},
+		{"bbbbbbbbbbbb", "TODO без владельца"},
+		{"bbbbbbbbbbbb", "TODO без владельца"}, // дубль схлопывается
 	}
 	if err := Write(path, want); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := os.ReadFile(path)
-	if n := strings.Count(string(body), "\n") - strings.Count(header, "\n"); n != 2 {
+	n := 0
+	for _, l := range strings.Split(string(body), "\n") {
+		if l != "" && !strings.HasPrefix(l, "#") {
+			n++
+		}
+	}
+	if n != 2 {
 		t.Errorf("строк с находками: %d, ожидалось 2\n%s", n, body)
 	}
-	// Сортировка по файлу: a.go должен идти раньше b.go.
-	if strings.Index(string(body), "a.go") > strings.Index(string(body), "b.go") {
+	// Сортировка по хэшу: aaa... должен идти раньше bbb...
+	if strings.Index(string(body), "\naaaaaaaaaaaa") > strings.Index(string(body), "\nbbbbbbbbbbbb") {
 		t.Error("снимок не отсортирован, диффы будут шумными")
 	}
 
@@ -55,7 +61,7 @@ func TestRoundTrip(t *testing.T) {
 	if !s.Known(want[0]) {
 		t.Error("известная находка не узнана")
 	}
-	if s.Known(Entry{"cccccccccccc", "Новое", "a.go"}) {
+	if s.Known(Entry{"cccccccccccc", "Новое"}) {
 		t.Error("незнакомая находка узнана")
 	}
 	if s.Fixed() != 1 {
@@ -70,5 +76,62 @@ func TestBrokenFileFails(t *testing.T) {
 	}
 	if _, err := Load(path); err == nil {
 		t.Error("битый снимок принят молча")
+	}
+}
+
+func TestReadsV1Snapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v1.txt")
+	body := "# hum1izer baseline v1\naaaaaaaaaaaa\tБаннер-разделитель\tsrc/a.go\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Known(Entry{"aaaaaaaaaaaa", "Баннер-разделитель"}) {
+		t.Error("запись из старого снимка не узнана")
+	}
+}
+
+func TestOneLinePerComment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "base.txt")
+	err := Write(path, []Entry{
+		{"aaaaaaaaaaaa", "Второе"},
+		{"aaaaaaaaaaaa", "Первое"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(path)
+	want := "aaaaaaaaaaaa\t" + Code("Второе") + "\t" + Code("Первое")
+	alt := "aaaaaaaaaaaa\t" + Code("Первое") + "\t" + Code("Второе")
+	if !strings.Contains(string(body), want) && !strings.Contains(string(body), alt) {
+		t.Errorf("два правила одного блока не слились в строку: %q", string(body))
+	}
+	if !strings.Contains(string(body), "# "+Code("Первое")+" Первое") {
+		t.Error("в шапке нет расшифровки кода правила")
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Size() != 2 {
+		t.Errorf("после чтения %d записей, ожидалось 2", s.Size())
+	}
+}
+
+func TestReadsV2Snapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v2.txt")
+	body := "# hum1izer baseline v2\nbbbbbbbbbbbb\tTODO без владельца\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Known(Entry{"bbbbbbbbbbbb", "TODO без владельца"}) {
+		t.Error("запись снимка v2 не узнана")
 	}
 }
