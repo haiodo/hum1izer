@@ -110,6 +110,9 @@ One block per comment, the dirtiest first. stderr shows
      hum1izer fix --batch - --write ./src
    ```
 
+   Pass the file from the report header, not the project root: the tool then
+   reads that one file instead of walking the whole tree.
+
    Give the prose only. The tool restores the marker, the indent and the
    wrap, deletes whole lines without leaving blanks, and keeps the code on a
    line that also held a trailing comment. Without `--write` it prints the
