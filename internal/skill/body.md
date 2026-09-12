@@ -132,6 +132,33 @@ Never touch: license headers and SPDX, `//go:generate`, `//go:embed`,
 `//nolint`, `// Code generated ... DO NOT EDIT`, `eslint-disable`,
 `@ts-expect-error`, compiler pragmas, references to tickets and commits.
 
+## Complexity of the code the comment sits on
+
+A long comment over a tangled function is a symptom, not a style problem. Before
+rewriting such a comment, check the function with what the project already runs:
+
+- `make lint` or `npm run lint` first - the project usually wires this already.
+- Go: `golangci-lint run` when `.golangci.yml` is there. Complexity comes from
+  `cyclop`, `gocognit`, `nestif`, `funlen`, `dupl`. A linter switched off in the
+  config is off on purpose; don't switch it on to win an argument.
+- TS and JS: `npx eslint .` when the project has an eslint config. Complexity
+  comes from `complexity`, `max-depth`, `max-lines-per-function` and
+  `sonarjs/cognitive-complexity`.
+
+Don't install a linter the project doesn't have, and don't score complexity by
+eye. hum1izer measures none of this and never will: it reads text, not syntax
+trees.
+
+If the function trips one of those linters, the fix is the function, not a
+better comment. Split it, name the parts, and the comment gets shorter on its
+own - often it disappears. If the project runs no linter at all, say so and
+leave the code alone; guessed thresholds are worse than none. Common tooling
+defaults, for reference only and not measured on this code: cyclomatic
+complexity under 10, function under 100 lines, inheritance depth under 5,
+coupling under 5, maintainability index over 65. The project's own numbers win: a
+repo that sets `min-complexity: 30` and `funlen: 240` has made that call, and
+reporting its functions against the defaults above is noise.
+
 ## How to fix prose
 
 If there's a sample of the author's writing - neighboring posts, past

@@ -516,6 +516,12 @@ that you need the humanizer-ru skill itself, with a model.
 
 There is no text rewriting either: hum1izer only shows and advises.
 
+No code complexity either - no cyclomatic or cognitive complexity, no
+maintainability index. That is a job for `golangci-lint` (`cyclop`, `gocognit`,
+`nestif`, `funlen`, `dupl`) and for eslint (`complexity`, `max-depth`); the
+skill tells the agent to run them instead of guessing. hum1izer reads text, not
+syntax trees.
+
 ## Development
 
 ```
