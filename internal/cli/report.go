@@ -358,7 +358,9 @@ func printFindingsJSON(items []code.Item, limit int) {
 	_ = enc.Encode(out)
 }
 
-func printCodeReport(items []code.Item, files, blocks, limit, top int) {
+// detail - печатать ли сами находки. На дереве их тысячи, и список правил
+// полезнее простыни; на конкретном файле наоборот нужен текст.
+func printCodeReport(items []code.Item, files, blocks, limit, top int, detail bool) {
 	shown := cut(items, limit)
 	byFile := map[string][]code.Item{}
 	var order []string
@@ -381,6 +383,9 @@ func printCodeReport(items []code.Item, files, blocks, limit, top int) {
 	}
 
 	for _, file := range order {
+		if !detail {
+			break
+		}
 		fmt.Printf("\n=== %s\n", file)
 		blocks := byFile[file]
 		sort.SliceStable(blocks, func(i, j int) bool { return blocks[i].Start < blocks[j].Start })
@@ -403,7 +408,7 @@ func printCodeReport(items []code.Item, files, blocks, limit, top int) {
 
 	fmt.Printf("\n--- итого: %d находок (%d жёстких) в %d блоках, %d комментариях, %d файлов\n",
 		countFindings(items), hard, len(items), blocks, files)
-	if len(shown) < len(items) {
+	if detail && len(shown) < len(items) {
 		fmt.Printf("--- показано блоков: %d из %d (--limit)\n", len(shown), len(items))
 	}
 	if len(byRule) == 0 {
@@ -423,12 +428,15 @@ func printCodeReport(items []code.Item, files, blocks, limit, top int) {
 		}
 		return list[i].rule < list[j].rule
 	})
-	if top > 0 && len(list) > top {
+	if detail && top > 0 && len(list) > top {
 		list = list[:top]
 	}
-	fmt.Println("--- чаще всего:")
+	fmt.Println("--- по правилам:")
 	for _, e := range list {
 		fmt.Printf("  %4d  %s\n", e.n, e.rule)
+	}
+	if !detail {
+		fmt.Println("--- сами находки: назови файл или каталог поменьше, либо --format md")
 	}
 }
 

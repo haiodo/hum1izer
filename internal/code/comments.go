@@ -149,7 +149,8 @@ func ExtractComments(path string) ([]Comment, error) {
 		}
 	case ".svelte":
 		spans = scanSvelte(string(src))
-	case ".swift":
+	case ".swift", ".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp":
+		// Без regexLit: деление в C встречается часто, а литералов-регулярок нет.
 		spans = scanC(string(src), cOpts{})
 	case ".java":
 		spans = scanC(string(src), cOpts{tripleQuote: true})

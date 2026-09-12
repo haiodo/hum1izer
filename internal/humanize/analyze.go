@@ -90,7 +90,7 @@ func Analyze(rs *RuleSet, text, genre string) Report {
 	r.MutedBans = len(effective) - len(r.HardBans)
 
 	allSoft := ScanMarkers(rs, text)
-	r.Markers = MuteByCategory(allSoft, rs.MutedCategories(genre))
+	r.Markers = MuteByName(MuteByCategory(allSoft, rs.MutedCategories(genre)), rs.MutedRules(genre))
 	r.MutedSoft = len(allSoft) - len(r.Markers)
 
 	dashMuted := rs.MutedBans(genre)["Длинное тире"]

@@ -29,9 +29,10 @@ type row struct {
 type side struct {
 	docs, words int
 	hits        map[string]int
+	docHits     map[string]int // в скольких документах правило сработало хоть раз
 }
 
-func newSide() *side { return &side{hits: map[string]int{}} }
+func newSide() *side { return &side{hits: map[string]int{}, docHits: map[string]int{}} }
 
 func main() {
 	file := flag.String("file", "", "JSONL с полями lang, label, text")
@@ -39,7 +40,7 @@ func main() {
 	set := flag.String("set", "", "встроенный набор правил: ru или en, по умолчанию как lang")
 	rulesPath := flag.String("rules", "", "свой файл правил вместо встроенного")
 	minHits := flag.Int("min-hits", 20, "не показывать правила реже скольких попаданий суммарно")
-	tsv := flag.Bool("tsv", false, "машинный вывод: имя, lift, попаданий")
+	tsv := flag.Bool("tsv", false, "машинный вывод: имя, lift, попаданий, чел-док%")
 	limit := flag.Int("limit", 0, "сколько строк прочитать, 0 - все")
 	flag.Parse()
 	if *file == "" {
@@ -66,7 +67,7 @@ func main() {
 		}
 		s.docs++
 		s.words += humanize.CountWords(r.Text)
-		count(rs, r.Text, s.hits)
+		count(rs, r.Text, s)
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -111,14 +112,24 @@ func scan(path, lang string, limit int, fn func(row)) error {
 }
 
 // count складывает попадания по имени правила и по имени категории: категория
-// нужна отдельно, потому что вес в rules.yaml ставится и на неё тоже.
-func count(rs *humanize.RuleSet, text string, into map[string]int) {
+// нужна отдельно, потому что вес в rules.yaml ставится и на неё тоже. Рядом
+// считается документов, а не попаданий: lift растёт от кучи совпадений в одном
+// тексте, а доля документов показывает, насколько правило широкий.
+func count(rs *humanize.RuleSet, text string, s *side) {
+	seen := map[string]bool{}
+	note := func(name string, n int) {
+		s.hits[name] += n
+		if !seen[name] {
+			seen[name] = true
+			s.docHits[name]++
+		}
+	}
 	for _, h := range humanize.ScanHardBans(rs, text) {
-		into[h.Marker] += h.Count
+		note(h.Marker, h.Count)
 	}
 	for _, h := range humanize.ScanMarkers(rs, text) {
-		into[h.Marker] += h.Count
-		into["["+h.Category+"]"] += h.Count
+		note(h.Marker, h.Count)
+		note("["+h.Category+"]", h.Count)
 	}
 }
 
@@ -134,12 +145,13 @@ func report(lang string, human, ai *side, models map[string]int, minHits int, ts
 		fmt.Println("нет одной из сторон, считать нечего")
 		return
 	}
-	fmt.Printf("\n%-46s %8s %8s %7s\n", "правило", "чел/100к", "маш/100к", "lift")
+	fmt.Printf("\n%-46s %8s %8s %7s %9s\n", "правило", "чел/100к", "маш/100к", "lift", "чел-док%")
 
 	type res struct {
 		name       string
 		h, a, lift float64
 		total      int
+		docs       float64
 	}
 	var out []res
 	names := map[string]bool{}
@@ -160,7 +172,7 @@ func report(lang string, human, ai *side, models map[string]int, minHits int, ts
 		if h > 0 {
 			l = a / h
 		}
-		out = append(out, res{n, h, a, l, total})
+		out = append(out, res{n, h, a, l, total, docShare(human, n)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].lift > out[j].lift })
 	for _, r := range out {
@@ -168,12 +180,21 @@ func report(lang string, human, ai *side, models map[string]int, minHits int, ts
 		if r.h == 0 {
 			lift = "      -" // у человека ноль, отношение не определено
 		}
-		fmt.Printf("%-46s %8.1f %8.1f %s\n", trim(r.name, 46), r.h, r.a, lift)
+		fmt.Printf("%-46s %8.1f %8.1f %s %8.1f\n", trim(r.name, 46), r.h, r.a, lift, r.docs)
 	}
 }
 
-// reportTSV: имя, lift, сколько всего попаданий. Отсюда значения переносятся
-// в rules.yaml. "inf" означает ноль у человека - маркер разделяет идеально.
+// docShare - доля документов стороны, где правило сработало хоть раз, в процентах.
+func docShare(s *side, name string) float64 {
+	if s.docs == 0 {
+		return 0
+	}
+	return float64(s.docHits[name]) / float64(s.docs) * 100
+}
+
+// reportTSV: имя, lift, сколько всего попаданий, доля человеческих документов.
+// Отсюда значения переносятся в rules.yaml. "inf" означает ноль у человека -
+// маркер разделяет идеально.
 func reportTSV(human, ai *side, minHits int) {
 	names := map[string]bool{}
 	for n := range human.hits {
@@ -196,7 +217,7 @@ func reportTSV(human, ai *side, minHits int) {
 		if h > 0 {
 			lift = fmt.Sprintf("%.2f", a/h)
 		}
-		fmt.Printf("%s\t%s\t%d\n", n, lift, human.hits[n]+ai.hits[n])
+		fmt.Printf("%s\t%s\t%d\t%.1f\n", n, lift, human.hits[n]+ai.hits[n], docShare(human, n))
 	}
 }
 

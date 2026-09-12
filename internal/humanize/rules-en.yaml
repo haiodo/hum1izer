@@ -92,10 +92,12 @@ hard_bans:
     fix: 'Use a comma, colon, period, or hyphen; or restructure the sentence.'
     lift: 1.7
     re: '—'
+    tests: [{text: "growth—steep and sudden", expect: true}, {text: "growth - steady but slow", expect: false}]
   - name: 'En dash'
     fix: "Legitimate only in numeric ranges; use 'to' or a hyphen otherwise."
     lift: 1.00  # ниже единицы: у человека чаще
     builtin: en_dash
+    tests: [{text: "onboarding–offboarding", expect: true}, {text: "2019–2024", expect: false}]
   - name: 'I hope this helps / Let me know if you need'
     fix: 'Chat artifact: delete it entirely.'
     re: 'i\s+hope\s+this\s+helps|let\s+me\s+know\s+if\s+you\s+need'
@@ -127,6 +129,7 @@ categories:
       - lit: robust
       - name: seamless(ly)
         word_re: 'seamless(?:ly)?'
+        tests: [{text: "seamlessly integrates with the cache", expect: true}, {text: "seam between modules", expect: false}]
       - lit: comprehensive
       - lit: cutting-edge
       - lit: state-of-the-art
@@ -407,6 +410,7 @@ categories:
     rules:
       - name: not only X but also Y
         re: 'not\s+only[^.!?\n]{1,40}?but\s+also'
+        tests: [{text: "not only faster but also cheaper", expect: true}, {text: "not only faster", expect: false}]
 
   - name: 'Bureaucratic nouns'
     fix: 'Unpack the nominalization into a verb: "implementation of X" -> "implement X"'
@@ -513,6 +517,7 @@ categories:
         word_re: 'that\s+said'
       - name: "it's important to note (that)"
         word_re: 'it.s\s+important\s+to\s+note(?:\s+that)?'
+        tests: [{text: "It's important to note that retries are bounded", expect: true}, {text: "important to note in the changelog", expect: false}]
       - lit: 'to summarize'
       - lit: 'all in all'
 
@@ -533,6 +538,7 @@ categories:
       - lit: 'symphony'
       - name: realm(s)
         word_re: 'realms?'
+        tests: [{text: "in the realm of build tooling", expect: true}, {text: "real estate data", expect: false}]
       - lit: 'complexities'
       - name: 'game-changing'
         word_re: 'game.changing'
@@ -927,9 +933,33 @@ genres:
     mute_bans:
       - 'Em dash'
       - 'En dash'
+    mute_rules:
+      # В коде это домен, а не реклама: power/jest/number transformation,
+      # "linked to" и "associated with" - связь в модели данных.
+      - 'transformation'
+      - 'linked to / tied to'
+      - 'associated / in association with'
+      # Замер на ядре Linux 5.10 (1.67 млн комментариев): всё это термины.
+      # beacon - кадр 802.11 (2754 срабатывания), elevat - планировщик ввода-вывода,
+      # augment - augmented rbtree, realm - область Kerberos, illuminat - подсветка
+      # клавиатуры, resonat - кварцевый резонатор, symphony - имя платы.
+      - 'beacon'
+      - 'elevat'
+      - 'augment'
+      - 'realm(s)'
+      - 'illuminat'
+      - 'encompass'
+      - 'resonat'
+      - 'symphony'
+      - 'complexities'
+      - 'actionable'
     mute_categories:
       - 'Hollow significance'
       - 'Symbol substitution / typography'
+      # На ядре Linux эта категория дала 593 срабатывания и ни одного по делу:
+      # "each bit represents a group", "not present a normal load" - обычные
+      # глаголы, а boasts/stands as в комментариях не встречаются вовсе.
+      - 'Copula inflation'
       # В коде это термины, а не штампы: navigate - метод роутера.
       - 'Tier 3 vocabulary'
       - 'Business jargon'
@@ -939,8 +969,29 @@ genres:
     # сообщение коммита тем более: порог CV из voice.toml humanize-text-skill
     cv_human_target: 0.35
     mute_bans: []
+    mute_rules:
+      # В коде это домен, а не реклама: power/jest/number transformation,
+      # "linked to" и "associated with" - связь в модели данных.
+      - 'transformation'
+      - 'linked to / tied to'
+      - 'associated / in association with'
+      # Замер на ядре Linux 5.10 (1.67 млн комментариев): всё это термины.
+      # beacon - кадр 802.11 (2754 срабатывания), elevat - планировщик ввода-вывода,
+      # augment - augmented rbtree, realm - область Kerberos, illuminat - подсветка
+      # клавиатуры, resonat - кварцевый резонатор, symphony - имя платы.
+      - 'beacon'
+      - 'elevat'
+      - 'augment'
+      - 'realm(s)'
+      - 'illuminat'
+      - 'encompass'
+      - 'resonat'
+      - 'symphony'
+      - 'complexities'
+      - 'actionable'
     mute_categories:
       - 'Bureaucratic nouns'
+      - 'Copula inflation'
       # В коде это термины, а не штампы: navigate - метод роутера.
       - 'Tier 3 vocabulary'
       - 'Business jargon'

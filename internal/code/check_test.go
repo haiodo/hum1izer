@@ -476,10 +476,22 @@ func TestDocLeadKeepsGodocConvention(t *testing.T) {
 		t.Error("JSDoc-конвенция поймана как копула")
 	}
 
+	// В коде вся категория заглушена замером на ядре, поэтому проверка guard'а
+	// идёт в прозаическом жанре: там копула по-прежнему ловится.
+	lead := CheckComment(cs, Comment{File: "a.go", Start: 1, Lines: 1, Doc: true,
+		Text: "Chunk represents a chunk of raw data"}, "marketing")
+	if hasRule(lead, "represents a/an") {
+		t.Error("ведущая строка doc-комментария поймана как копула")
+	}
 	prose := CheckComment(cs, Comment{File: "a.go", Start: 1, Lines: 1,
-		Text: "This represents a shift in how we handle retries", Next: "x := 1"}, "code")
+		Text: "This represents a shift in how we handle retries", Next: "x := 1"}, "marketing")
 	if !hasRule(prose, "represents a/an") {
 		t.Error("копула в обычном комментарии пропущена")
+	}
+	inCode := CheckComment(cs, Comment{File: "a.go", Start: 1, Lines: 1,
+		Text: "This represents a shift in how we handle retries", Next: "x := 1"}, "code")
+	if hasRule(inCode, "represents a/an") {
+		t.Error("копула в коде должна быть заглушена жанром")
 	}
 }
 
@@ -512,5 +524,56 @@ func TestKeepTagMutesBlock(t *testing.T) {
 	kept.Text = "hum1izer:keep нужен под рукой\n" + noisy.Text
 	if got := CheckComment(cs, kept, "code"); len(got) != 0 {
 		t.Errorf("блок с hum1izer:keep всё равно даёт находки: %+v", got)
+	}
+}
+
+// Правило глушится жанром поштучно: "linked to" в коде - связь в модели данных,
+// в прозе - уход от конкретики, и там оно должно остаться.
+func TestGenreMutesSingleRule(t *testing.T) {
+	var cs CodeSets
+	var err error
+	if cs.RU, err = humanize.LoadBuiltin("ru"); err != nil {
+		t.Fatal(err)
+	}
+	if cs.EN, err = humanize.LoadBuiltin("en"); err != nil {
+		t.Fatal(err)
+	}
+	if cs.Code, err = humanize.LoadBuiltin("code"); err != nil {
+		t.Fatal(err)
+	}
+
+	c := Comment{File: "a.ts", Start: 1, Lines: 1,
+		Text: "The object a conversation is linked to, as the root message would carry it.",
+		Next: "const x = 1"}
+	if hasRule(CheckComment(cs, c, "code"), "linked to / tied to") {
+		t.Error("заглушённое правило сработало в коде")
+	}
+	if !hasRule(CheckComment(cs, c, "marketing"), "linked to / tied to") {
+		t.Error("правило пропало и в прозе, а глушился только код")
+	}
+	// Соседи по категории не должны пострадать: transformation из Tier 2
+	// заглушен, unleash из той же категории - нет.
+	if !hasRule(CheckComment(cs, Comment{File: "a.ts", Start: 1, Lines: 1,
+		Text: "This will unleash the full power of the cache", Next: "const x = 1"}, "code"), "unleash") {
+		t.Error("вместе с правилом заглушена вся категория")
+	}
+}
+
+// C и C++ разбираются тем же сканером, что Swift, но без regexLit: деление в
+// сишном коде сплошь и рядом, а литералов-регулярок там нет.
+func TestExtractCommentsC(t *testing.T) {
+	src := "/*\n * Returns free slots.\n */\nstatic int f(void)\n{\n\t/* head wraps before tail */\n\treturn 10 / 2; // деление, не регулярка\n}\n"
+	got := texts(extract(t, "a.c", src))
+	if len(got) != 3 {
+		t.Fatalf("блоков %d, ожидалось 3: %q", len(got), got)
+	}
+	if !strings.Contains(got[0], "Returns free slots") {
+		t.Errorf("первый блок: %q", got[0])
+	}
+	if !strings.Contains(got[2], "деление") {
+		t.Errorf("хвостовой комментарий после деления потерян: %q", got)
+	}
+	if h := texts(extract(t, "a.h", "/* guard */\n#define A 1\n")); len(h) != 1 {
+		t.Errorf(".h не разобрался: %q", h)
 	}
 }

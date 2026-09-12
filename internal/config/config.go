@@ -35,6 +35,14 @@ type Rules struct {
 	Disable []string `yaml:"disable,omitempty"`
 }
 
+// LLM - куда ходить за переписыванием комментария. Годится любой
+// OpenAI-совместимый адрес; ключ лучше держать в OPENAI_API_KEY, а не в файле.
+type LLM struct {
+	BaseURL string `yaml:"base_url,omitempty"`
+	Model   string `yaml:"model,omitempty"`
+	Key     string `yaml:"key,omitempty"`
+}
+
 type Config struct {
 	Version   int       `yaml:"version"`
 	Genre     string    `yaml:"genre,omitempty"`
@@ -44,6 +52,7 @@ type Config struct {
 	Exclude   []string  `yaml:"exclude,omitempty"`
 	Baseline  string    `yaml:"baseline,omitempty"`
 	Rules     Rules     `yaml:"rules"`
+	LLM       LLM       `yaml:"llm,omitempty"`
 
 	Path string `yaml:"-"` // откуда прочитан, пусто если настроек нет
 }
@@ -118,6 +127,8 @@ func (c Config) validate() error {
 
 // langExt: имя языка в настройках -> расширения файлов.
 var langExt = map[string][]string{
+	"c":      {".c", ".h"},
+	"cpp":    {".cc", ".cpp", ".cxx", ".hh", ".hpp"},
 	"go":     {".go"},
 	"ts":     {".ts", ".tsx"},
 	"js":     {".js", ".jsx", ".mjs", ".cjs"},

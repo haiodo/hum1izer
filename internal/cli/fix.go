@@ -503,6 +503,9 @@ func keepBlocks(root, basePath string, cmts []code.Comment, write bool) int {
 		fmt.Fprintln(os.Stderr, "--keep: укажи --baseline <файл> или baseline в .hum1izer.yaml")
 		return 2
 	}
+	if cfg.Baseline == "" {
+		fmt.Fprintf(os.Stderr, "снимок %s прогон без --baseline не читает: добавь baseline в .hum1izer.yaml\n", path)
+	}
 	set, err := baseline.Load(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -618,20 +621,7 @@ func apply(edits []edit, write bool) int {
 		if !write {
 			continue
 		}
-		raw, err := os.ReadFile(file)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 2
-		}
-		src := string(raw)
-		for _, e := range es {
-			if e.so < 0 || e.eo > len(src) || e.so > e.eo {
-				fmt.Fprintf(os.Stderr, "%s: диапазон %d-%d вне файла, правка пропущена\n", file, e.so, e.eo)
-				continue
-			}
-			src = src[:e.so] + e.new + src[e.eo:]
-		}
-		if err := os.WriteFile(file, []byte(src), 0o644); err != nil {
+		if err := writeEdits(file, es); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 2
 		}
@@ -640,6 +630,37 @@ func apply(edits []edit, write bool) int {
 		fmt.Println("\nпредпросмотр: --write применит")
 	}
 	return 0
+}
+
+// writeEdits правит один файл и ничего не печатает: в TUI печать в stdout
+// ложится поверх экрана и ломает верстку.
+func writeEdits(file string, es []edit) error {
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	src := string(raw)
+	sortEditsDesc(es)
+	for _, e := range es {
+		if e.so < 0 || e.eo > len(src) || e.so > e.eo {
+			return fmt.Errorf("%s: диапазон %d-%d вне файла", file, e.so, e.eo)
+		}
+		src = src[:e.so] + e.new + src[e.eo:]
+	}
+	return os.WriteFile(file, []byte(src), 0o644)
+}
+
+// keepOne кладёт один блок в снимок, тоже молча. Правила берутся из самой
+// находки: проверять блок заново незачем, он уже проверен.
+func keepOne(basePath, hash string, rules []string) error {
+	set, err := baseline.Load(basePath)
+	if err != nil {
+		return err
+	}
+	for _, r := range rules {
+		set.Add(baseline.Entry{Hash: hash, Rule: r})
+	}
+	return set.Save()
 }
 
 // sortEditsDesc - правки по убыванию смещения: так ранние не сдвигают поздние.

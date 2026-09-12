@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/haiodo/hum1izer/internal/baseline"
 	"github.com/haiodo/hum1izer/internal/code"
@@ -25,12 +27,15 @@ const usage = `hum1izer - проверка текста, комментарие�
 нейросети, канцелярит и штампы.
 
   hum1izer [флаги] файл...         проза: md, txt, из stdin через -
-  hum1izer --code путь...          комментарии в .go .ts .js .svelte .swift .java .kt
+  hum1izer --code путь...          комментарии в .go .c .cpp .ts .js .svelte .swift .java .kt
   hum1izer --code репозиторий      то же плюс последние коммиты, если там git
   hum1izer install --claude ...    поставить скилл для агента
   hum1izer init [путь]             создать .hum1izer.yaml с настройками проекта
   hum1izer upgrade                 обновиться до последнего релиза с GitHub
   hum1izer fix --block <хэш> ...   удалить или заменить блок комментария
+  hum1izer tui [путь]              разобрать находки руками в три панели
+  hum1izer llm --key <ключ>         выбрать модель для переписывания
+  hum1izer calibrate [путь]        подобрать пределы под этот репозиторий
 
 Флаги прозы:
   --genre   жанр текста: marketing (по умолчанию), academic, legal, fiction, news
@@ -57,8 +62,13 @@ const usage = `hum1izer - проверка текста, комментарие�
 
 Вывод:
   --format  text (по умолчанию), md, jsonl, json, quiet
+  --only    оставить только эти правила или категории, через запятую
+  --langs   только эти языки: c, cpp, go, ts, js, svelte, swift, java, kotlin
   --limit N сколько блоков отдать, 0 - все. Первыми идут самые грязные
   --top N   сколько строк показать в сводке, 0 - все (по умолчанию 12)
+
+  Каталог в аргументе - сводка по правилам без самих находок: на дереве их
+  тысячи. Назови файл - и находки печатаются целиком.
   --json    то же, что --format json
   --quiet   то же, что --format quiet
 
@@ -84,6 +94,12 @@ func Run() int {
 			return runUpgrade(os.Args[2:])
 		case "fix":
 			return runFix(os.Args[2:])
+		case "tui":
+			return runTUI(os.Args[2:])
+		case "llm":
+			return runLLMCmd(os.Args[2:])
+		case "calibrate":
+			return runCalibrate(os.Args[2:])
 		}
 	}
 
@@ -104,6 +120,8 @@ func Run() int {
 	writeBase := flag.Bool("write-baseline", false, "перезаписать снимок текущими находками")
 	cfgPath := flag.String("config", "", "файл настроек вместо поиска .hum1izer.yaml")
 	noConfig := flag.Bool("no-config", false, "игнорировать .hum1izer.yaml")
+	only := flag.String("only", "", "оставить только эти правила или категории, через запятую")
+	langs := flag.String("langs", "", "сканировать только эти языки, через запятую")
 	showVersion := flag.Bool("version", false, "показать версию")
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	flag.Parse()
@@ -144,6 +162,18 @@ func Run() int {
 	}
 	if !given["baseline"] && cfg.Baseline != "" {
 		*basePath = resolve(cfg, cfg.Baseline)
+	}
+	if *langs != "" {
+		cfg.Languages.Only = splitList(*langs)
+		for _, l := range cfg.Languages.Only {
+			if !config.KnownLang(l) {
+				fmt.Fprintf(os.Stderr, "--langs: неизвестный язык %q, известны: %s\n", l, strings.Join(config.Langs(), ", "))
+				return 2
+			}
+		}
+	}
+	if *only != "" {
+		cfg.Rules.Only = splitList(*only)
 	}
 	// Снимок коммитов бессмыслен: каждый коммит - новая находка, файл пришлось бы
 	// переписывать после каждого. Сообщения проверяет отдельный прогон или хук commit-msg.
@@ -255,37 +285,28 @@ func resolve(cfg config.Config, path string) string {
 	return filepath.Join(filepath.Dir(cfg.Path), path)
 }
 
-// runCode: комментарии из исходников и, если в аргументе лежит git-репозиторий,
-// сообщения последних коммитов. И то и другое проверяется как обычная проза.
-func runCode(args []string, o codeOpts) int {
+// collectItems - общий сбор находок для отчёта и для TUI. Возвращает exit 2 и
+// nil, если правила или настройки не читаются: дальше идти не с чем.
+func collectItems(args []string, o codeOpts) (items []code.Item, files, blocks, exit int) {
 	cs := code.CodeSets{MaxLines: o.maxLines, MaxLineLen: o.maxLine}
 	excludes, err := o.cfg.Excludes()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "исключения: %v\n", err)
-		return 2
+		return nil, 0, 0, 2
 	}
 	filter := code.Filter{SkipTests: o.skipTests, Langs: o.cfg.AllowedLangs(), Exclude: excludes}
 
 	if cs.RU, err = loadProse(o.rules, "ru"); err != nil {
 		fmt.Fprintf(os.Stderr, "русские правила: %v\n", err)
-		return 2
+		return nil, 0, 0, 2
 	}
 	if cs.EN, err = humanize.LoadBuiltin("en"); err != nil {
 		fmt.Fprintf(os.Stderr, "английские правила: %v\n", err)
-		return 2
+		return nil, 0, 0, 2
 	}
 	if cs.Code, err = humanize.LoadBuiltin("code"); err != nil {
 		fmt.Fprintf(os.Stderr, "правила для кода: %v\n", err)
-		return 2
-	}
-
-	var items []code.Item
-	files, blocks, exit := 0, 0, 0
-	collect := func(c code.Comment, genre string) {
-		blocks++
-		if f := allowed(o.cfg, code.CheckComment(cs, c, genre)); len(f) > 0 {
-			items = append(items, code.NewItem(c, f))
-		}
+		return nil, 0, 0, 2
 	}
 
 	for _, root := range args {
@@ -295,32 +316,34 @@ func runCode(args []string, o codeOpts) int {
 			exit = 2
 			continue
 		}
-		for _, p := range paths {
-			cmts, err := code.ExtractComments(p)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s: %v\n", p, err)
-				continue
-			}
-			files++
-			for _, c := range cmts {
-				if strings.TrimSpace(c.Text) == "" {
-					continue
-				}
-				collect(c, "code")
-			}
-		}
+		scanned, found, n := scanFiles(paths, cs, o.cfg)
+		files += n
+		blocks += scanned
+		items = append(items, found...)
 		if o.commits > 0 {
 			cmts, err := code.GitCommits(root, o.commits)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s: %v\n", root, err)
 			}
 			for _, c := range cmts {
-				collect(c, "commit")
+				blocks++
+				if f := allowed(o.cfg, code.CheckComment(cs, c, "commit")); len(f) > 0 {
+					items = append(items, code.NewItem(c, f))
+				}
 			}
 		}
 	}
-
 	code.SortItems(items)
+	return items, files, blocks, exit
+}
+
+// runCode: комментарии из исходников и, если в аргументе лежит git-репозиторий,
+// сообщения последних коммитов. И то и другое проверяется как обычная проза.
+func runCode(args []string, o codeOpts) int {
+	items, files, blocks, exit := collectItems(args, o)
+	if exit == 2 && items == nil {
+		return 2
+	}
 
 	if o.baseline != "" {
 		var err error
@@ -351,9 +374,85 @@ func runCode(args []string, o codeOpts) int {
 		fmt.Printf("файлов: %d, комментариев: %d, блоков с находками: %d, находок: %d\n",
 			files, blocks, len(items), countFindings(items))
 	default:
-		printCodeReport(items, files, blocks, o.limit, o.top)
+		printCodeReport(items, files, blocks, o.limit, o.top, allFiles(args))
 	}
 	return exit
+}
+
+// splitList - список через запятую с обрезкой пробелов и пустых элементов.
+func splitList(s string) []string {
+	var out []string
+	for _, n := range strings.Split(s, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// allFiles: прогон назвали поимённо, а не каталогом - тогда находки печатаются
+// целиком. На дереве вместо них идёт сводка по правилам.
+func allFiles(args []string) bool {
+	for _, a := range args {
+		st, err := os.Stat(a)
+		if err != nil || st.IsDir() {
+			return false
+		}
+	}
+	return len(args) > 0
+}
+
+// scanFiles разбирает файлы пулом воркеров: проверка правил занимает 95% времени
+// прогона и упирается в одно ядро. Порядок результата не важен, дальше SortItems.
+func scanFiles(paths []string, cs code.CodeSets, cfg config.Config) (blocks int, items []code.Item, files int) {
+	workers := min(runtime.NumCPU(), len(paths))
+	if workers < 1 {
+		workers = 1
+	}
+	type part struct {
+		items  []code.Item
+		blocks int
+		files  int
+	}
+	parts := make([]part, workers)
+	next := make(chan int, len(paths))
+	for i := range paths {
+		next <- i
+	}
+	close(next)
+
+	var wg sync.WaitGroup
+	for w := range workers {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := range next {
+				cmts, err := code.ExtractComments(paths[i])
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "%s: %v\n", paths[i], err)
+					continue
+				}
+				parts[w].files++
+				for _, c := range cmts {
+					if strings.TrimSpace(c.Text) == "" {
+						continue
+					}
+					parts[w].blocks++
+					if f := allowed(cfg, code.CheckComment(cs, c, "code")); len(f) > 0 {
+						parts[w].items = append(parts[w].items, code.NewItem(c, f))
+					}
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	for _, p := range parts {
+		blocks += p.blocks
+		files += p.files
+		items = append(items, p.items...)
+	}
+	return blocks, items, files
 }
 
 // applyBaseline оставляет только новые находки. Код возврата 1 - за новое, а не
@@ -373,6 +472,9 @@ func applyBaseline(o codeOpts, items []code.Item) ([]code.Item, int, error) {
 		return nil, 0, nil
 	}
 
+	if _, err := os.Stat(o.baseline); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "снимка %s нет: все находки считаются новыми\n", o.baseline)
+	}
 	base, err := baseline.Load(o.baseline)
 	if err != nil {
 		return nil, 0, err

@@ -57,14 +57,22 @@ type Thresholds struct {
 	BandEdit         int     `yaml:"band_edit"`
 }
 
+// RuleTest - встроенный тест правила: правило обязано сработать на text при
+// expect: true и промолчать при false. Прогоняется в rules_test.go.
+type RuleTest struct {
+	Text   string `yaml:"text"`
+	Expect bool   `yaml:"expect"`
+}
+
 type RuleSpec struct {
-	Name    string  `yaml:"name"`
-	Fix     string  `yaml:"fix"`
-	Lift    float64 `yaml:"lift,omitempty"`
-	Lit     string  `yaml:"lit"`
-	Re      string  `yaml:"re"`
-	WordRe  string  `yaml:"word_re"`
-	Builtin string  `yaml:"builtin"`
+	Name    string     `yaml:"name"`
+	Fix     string     `yaml:"fix"`
+	Lift    float64    `yaml:"lift,omitempty"`
+	Lit     string     `yaml:"lit"`
+	Re      string     `yaml:"re"`
+	WordRe  string     `yaml:"word_re"`
+	Builtin string     `yaml:"builtin"`
+	Tests   []RuleTest `yaml:"tests,omitempty"`
 }
 
 type CategorySpec struct {
@@ -77,6 +85,9 @@ type CategorySpec struct {
 type GenreSpec struct {
 	MuteBans       []string `yaml:"mute_bans"`
 	MuteCategories []string `yaml:"mute_categories"`
+	// MuteRules снимает отдельное правило внутри категории: в коде "linked to" -
+	// это связь в модели данных, а в рекламе - уход от конкретики.
+	MuteRules []string `yaml:"mute_rules"`
 	// CVHumanTarget - свой порог рваности ритма для этого регистра. Технический
 	// текст ровнее разговорного, и один порог на всех наказывал документацию.
 	CVHumanTarget *float64 `yaml:"cv_human_target,omitempty"`
@@ -98,6 +109,7 @@ type Rule struct {
 	Name    string
 	Fix     string
 	Lift    float64
+	Tests   []RuleTest
 	re      *regexp.Regexp
 	matcher func(string) []int
 }
@@ -129,6 +141,7 @@ type RuleSet struct {
 	Genres            []string
 	mutedBans         map[string]map[string]bool
 	mutedCategories   map[string]map[string]bool
+	mutedRules        map[string]map[string]bool
 	genreCV           map[string]float64
 }
 
@@ -150,6 +163,8 @@ func (rs *RuleSet) HasGenre(name string) bool {
 func (rs *RuleSet) MutedBans(genre string) map[string]bool { return rs.mutedBans[genre] }
 
 func (rs *RuleSet) MutedCategories(genre string) map[string]bool { return rs.mutedCategories[genre] }
+
+func (rs *RuleSet) MutedRules(genre string) map[string]bool { return rs.mutedRules[genre] }
 
 // builtins — правила, которые регуляркой не выражаются.
 var builtins = map[string]func(string) []int{
@@ -183,6 +198,7 @@ func parseRules(raw []byte) (*RuleSet, error) {
 		CopyPasteCategory: f.CopyPasteCategory,
 		mutedBans:         map[string]map[string]bool{},
 		mutedCategories:   map[string]map[string]bool{},
+		mutedRules:        map[string]map[string]bool{},
 		genreCV:           map[string]float64{},
 	}
 	for i, spec := range f.HardBans {
@@ -208,6 +224,7 @@ func parseRules(raw []byte) (*RuleSet, error) {
 		rs.Genres = append(rs.Genres, name)
 		rs.mutedBans[name] = ToSet(g.MuteBans)
 		rs.mutedCategories[name] = ToSet(g.MuteCategories)
+		rs.mutedRules[name] = ToSet(g.MuteRules)
 		if g.CVHumanTarget != nil {
 			rs.genreCV[name] = *g.CVHumanTarget
 		}
@@ -246,6 +263,19 @@ func (rs *RuleSet) validate() error {
 			}
 		}
 	}
+	ruleNames := map[string]bool{}
+	for _, c := range rs.Categories {
+		for _, r := range c.Rules {
+			ruleNames[r.Name] = true
+		}
+	}
+	for genre, muted := range rs.mutedRules {
+		for name := range muted {
+			if !ruleNames[name] {
+				return fmt.Errorf("жанр %q глушит неизвестное правило %q", genre, name)
+			}
+		}
+	}
 	for name := range rs.FreqBans {
 		if !known[name] {
 			return fmt.Errorf("freq_bans ссылается на неизвестный бан %q", name)
@@ -255,7 +285,7 @@ func (rs *RuleSet) validate() error {
 }
 
 func compile(spec RuleSpec, catFix string) (Rule, error) {
-	r := Rule{Name: spec.Name, Fix: spec.Fix, Lift: spec.Lift}
+	r := Rule{Name: spec.Name, Fix: spec.Fix, Lift: spec.Lift, Tests: spec.Tests}
 	if r.Fix == "" {
 		r.Fix = catFix
 	}

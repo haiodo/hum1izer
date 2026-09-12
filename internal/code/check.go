@@ -42,7 +42,7 @@ func CheckComment(cs CodeSets, c Comment, genre string) []Finding {
 	if humanize.CyrillicShare(c.Text) >= 0.3 {
 		prose = cs.RU
 	}
-	if isLicenseHeader(c) || pragmaRe.MatchString(c.Text) || keepRe.MatchString(c.Text) {
+	if Ignored(c) {
 		return nil
 	}
 	var out []Finding
@@ -101,7 +101,7 @@ func isLicenseHeader(c Comment) bool {
 func ruleFindings(rs *humanize.RuleSet, c Comment, genre string) []Finding {
 	words := humanize.CountWords(c.Text)
 	bans := humanize.MuteByName(humanize.EffectiveHardBans(rs, humanize.ScanHardBans(rs, c.Text), words), rs.MutedBans(genre))
-	soft := humanize.MuteByCategory(humanize.ScanMarkers(rs, c.Text), rs.MutedCategories(genre))
+	soft := humanize.MuteByName(humanize.MuteByCategory(humanize.ScanMarkers(rs, c.Text), rs.MutedCategories(genre)), rs.MutedRules(genre))
 	humanize.FillLines(c.Text, bans)
 	humanize.FillLines(c.Text, soft)
 
@@ -163,6 +163,28 @@ var (
 func isProse(l string) bool {
 	t := strings.TrimSpace(l)
 	return t != "" && !docTagRe.MatchString(t)
+}
+
+// Ignored - блоки, которые проверка не смотрит: лицензия, прагма компилятора,
+// пометка hum1izer:keep. Калибровка должна пропускать их так же, иначе шапки
+// лицензий задерут предел длины.
+func Ignored(c Comment) bool {
+	return isLicenseHeader(c) || pragmaRe.MatchString(c.Text) || keepRe.MatchString(c.Text)
+}
+
+// Shape - форма блока: сколько в нём строк прозы и какая строка самая длинная.
+// По ним калибруются пределы под конкретный репозиторий.
+func Shape(c Comment) (prose, longest int) {
+	for _, l := range strings.Split(c.Text, "\n") {
+		if !isProse(l) {
+			continue
+		}
+		prose++
+		if n := len([]rune(l)); n > longest && !longTokenRe.MatchString(l) {
+			longest = n
+		}
+	}
+	return prose, longest
 }
 
 func structChecks(maxLines, maxLineLen int, c Comment) []Finding {
