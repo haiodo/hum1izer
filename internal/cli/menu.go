@@ -289,18 +289,29 @@ func (m tuiModel) rewriteScope() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	var queue []code.Item
+	skipped := 0
 	for _, it := range m.scopeItems() {
-		if m.suggest[mark(it)] == "" {
+		switch {
+		case m.suggest[mark(it)] != "":
+		case m.trailing(it):
+			skipped++
+		default:
 			queue = append(queue, it)
 		}
 	}
 	if len(queue) == 0 {
-		m.status = "every block here already has a suggestion"
+		m.status = "nothing to ask about here"
+		if skipped > 0 {
+			m.status = fmt.Sprintf("%d trailing comments, those are edited by hand", skipped)
+		}
 		return m, nil
 	}
 	m.queue = append(m.queue, queue...)
 	m.batch = true
 	m.status = fmt.Sprintf("asking the model for %d blocks...", len(queue))
+	if skipped > 0 {
+		m.status = fmt.Sprintf("%s (%d trailing skipped)", m.status, skipped)
+	}
 	return m.pump()
 }
 

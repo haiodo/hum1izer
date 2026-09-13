@@ -630,6 +630,11 @@ func (m tuiModel) applyItem(it code.Item, kind byte, body string) tea.Model {
 		return m
 	}
 
+	if kind == markRewrite && m.trailing(it) {
+		m.status = "trailing comment: rewriting it is not supported, edit by hand"
+		return m
+	}
+
 	switch kind {
 	case markKeep:
 		if m.basePath == "" {
@@ -759,7 +764,14 @@ func (m tuiModel) askRewrite() (tea.Model, tea.Cmd) {
 		m.status = "rewrite unavailable: " + m.llmErr
 		return m, nil
 	}
+	if m.trailing(it) {
+		m.status = "trailing comment: rewriting it is not supported, edit by hand"
+		return m, nil
+	}
 	m.pending++
+	// Одиночный запрос - та же пачка из одного: иначе ответ приходит молча, и
+	// человек, ушедший в другой файл, уже не найдёт, где его смотреть.
+	m.batch = true
 	m.status = "asking the model..."
 	return m, m.rewriteCmd(it)
 }
@@ -921,6 +933,18 @@ func proseLines(raw string) int {
 		}
 	}
 	return n
+}
+
+// trailing - комментарий после кода на той же строке. Заменять его plan не
+// умеет, поэтому и модель о нём не спрашивают.
+func (m tuiModel) trailing(it code.Item) bool {
+	lines := m.fileLines(it.File)
+	if it.Start < 1 || it.Start > len(lines) {
+		return false
+	}
+	head := strings.SplitN(strings.TrimLeft(it.Raw, " \t"), "\n", 2)[0]
+	i := strings.Index(lines[it.Start-1], head)
+	return i > 0 && strings.TrimSpace(lines[it.Start-1][:i]) != ""
 }
 
 // renderedLines: сколько строк займёт ответ после вставки. Предел из настроек
@@ -1173,6 +1197,9 @@ func (m tuiModel) header() string {
 		model = m.llm.Model()
 	}
 	line := "model: " + model + "   [m] change"
+	if n := len(m.reviewKeys()); n > 0 {
+		line += fmt.Sprintf("   %d to review [R]", n)
+	}
 	if m.calls > 0 {
 		line += fmt.Sprintf("   tokens: %s in / %s out   calls: %d",
 			short(m.usage.In), short(m.usage.Out), m.calls)

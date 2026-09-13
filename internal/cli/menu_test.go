@@ -403,3 +403,92 @@ func TestReviewDeletesBlock(t *testing.T) {
 		t.Errorf("блок остался в очереди разбора: %d", len(dm.review.keys))
 	}
 }
+
+// Хвостовой комментарий не переписывается вставкой, поэтому и модель о нём не
+// спрашивают: это выброшенные токены и отказ в конце.
+func TestTrailingCommentsSkipped(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "a.ts")
+	src := "const x = 1 // хвостовой комментарий про всё на свете\n\n// обычный комментарий про всё на свете\nconst y = 2\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmts, err := code.ExtractComments(p)
+	if err != nil || len(cmts) != 2 {
+		t.Fatalf("комментарии: %v %d", err, len(cmts))
+	}
+	var items []code.Item
+	for _, c := range cmts {
+		items = append(items, code.Item{Hash: baseline.Hash(c.Text), File: p, Start: c.Start,
+			End: c.End, Raw: c.Raw, Findings: []code.ItemFinding{{Rule: "R", Fix: "f"}}})
+	}
+	m := tuiModel{root: dir, maxLine: 100, opts: codeOpts{maxLines: 2, maxLine: 100},
+		items: items, done: map[string]bool{}, suggest: map[string]string{},
+		noted: map[string]bool{}, selected: map[string]bool{}, picked: map[string]bool{},
+		src: map[string][]string{}, width: 120, height: 30}
+	m.buildTree()
+	m.llm, _ = newLLMForTest(t, "stub")
+
+	if !m.trailing(items[0]) {
+		t.Error("хвостовой комментарий не распознан")
+	}
+	if m.trailing(items[1]) {
+		t.Error("обычный комментарий принят за хвостовой")
+	}
+
+	next, cmd := m.rewriteScope()
+	mm := next.(tuiModel)
+	if cmd == nil {
+		t.Fatal("команда не создана")
+	}
+	if mm.pending != 1 {
+		t.Errorf("в полёте %d запросов, ожидался 1: хвостовой не пропущен", mm.pending)
+	}
+	if !strings.Contains(mm.status, "1 trailing skipped") {
+		t.Errorf("статус не говорит о пропуске: %q", mm.status)
+	}
+
+	// Если предложение по хвостовому всё же есть, применение говорит это
+	// по-английски, а не сообщением из plan.
+	m.suggest[mark(items[0])] = "коротко"
+	out := m.applyItem(items[0], markRewrite, "коротко").(tuiModel)
+	if !strings.Contains(out.status, "trailing comment") || strings.Contains(out.status, "хвостового") {
+		t.Errorf("статус: %q", out.status)
+	}
+	if len(out.done) != 0 {
+		t.Error("блок помечен сделанным, хотя правка не прошла")
+	}
+}
+
+// Одиночный запрос тоже открывает разбор по приходу ответа, а пока он идёт -
+// в шапке видно, сколько предложений ждёт решения.
+func TestSingleRewriteOpensReview(t *testing.T) {
+	m := menuModel(t, "a.go")
+	m.llm, _ = newLLMForTest(t, "stub")
+	m.focus = paneBlocks
+
+	next, cmd := m.askRewrite()
+	rm := next.(tuiModel)
+	if cmd == nil || !rm.batch {
+		t.Fatalf("запрос не помечен пачкой: cmd nil=%v batch=%v", cmd == nil, rm.batch)
+	}
+
+	after, _ := rm.Update(suggestMsg{key: mark(rm.items[0]), text: "коротко"})
+	am := after.(tuiModel)
+	if am.review == nil {
+		t.Fatalf("разбор не открылся, статус %q", am.status)
+	}
+	if !strings.Contains(am.header(), "1 to review") {
+		t.Errorf("шапка не показывает очередь: %q", am.header())
+	}
+
+	// Закрыли разбор - в шапке всё равно видно, что решение ждёт.
+	closed, _ := am.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cm := closed.(tuiModel)
+	if cm.review != nil {
+		t.Fatal("разбор не закрылся")
+	}
+	if !strings.Contains(cm.header(), "1 to review") {
+		t.Errorf("после закрытия очередь потерялась из вида: %q", cm.header())
+	}
+}
