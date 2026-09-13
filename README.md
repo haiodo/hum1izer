@@ -6,7 +6,7 @@ A Go CLI: it checks prose, code comments, and commit messages for traces of AI
 generation, officialese, and stock phrases, shows findings with line numbers,
 and says what to do with each one. Russian and English.
 
-It only counts what can be caught with grep and arithmetic: 21 hard bans, 19
+It only counts what can be caught with grep and arithmetic: 21 hard bans, 21
 marker categories, rhythm, nominalization, document structure, a cleanliness
 score of 0-100.
 
@@ -484,6 +484,82 @@ corpus didn't have enough hits kept the borrowed values from the
 humanizer-ru catalog - they are marked with a comment directly in
 `rules.yaml`.
 
+## Working through findings by hand
+
+```bash
+hum1izer tui ./src
+```
+
+Three panes: rules with their counts, files inside the rule, blocks inside the
+file. The block under the cursor is shown with the code around it.
+
+`Enter` opens a menu of actions, so there are no keys to memorize. The scope is
+resolved as: picked blocks, else selected files, else the whole rule when the
+cursor is in the left pane, else the current file.
+
+| Key | What it does |
+|---|---|
+| `enter` | menu of actions for the current scope |
+| `space` | in the files pane marks a file for the batch, in the blocks pane keeps the block |
+| `d` | delete the block |
+| `t` | note into `todo.md` |
+| `e` | open in `$EDITOR` at the right line |
+| `c` | settings: length limits and which languages to scan |
+| `m` | pick a model |
+| `r` | rescan |
+| `esc` | clear the selection, or quit when there is none |
+
+Every decision is written to disk at once. An applied block stays in the list
+marked `done`, and only the edited file is rescanned, not the tree.
+
+Notes go into `todo.md` next to `.hum1izer.yaml`: the file with its line, your
+text, the rules that fired and the comment itself as a quote. The file is
+appended to, never rewritten - it is a log across several passes.
+
+### Rewriting with a model
+
+The tool writes no prose of its own. But when an OpenAI-compatible endpoint is
+configured, the menu offers a model pass over the whole scope: requests go in a
+batch, at most five at a time, and a rate-limit refusal (429) puts the block
+back into the queue and waits for the stated delay.
+
+When the batch drains, the review screen opens: a diff of old and new, and a
+row of actions - `Accept`, `Reject`, `Delete`, `Ask again`, `Skip` - driven by
+arrows and `enter`. The new text is shown exactly as it will land in the file:
+same indent, same marker, wrapped at `max_line`.
+
+```bash
+hum1izer llm --key <key>      # store the key and pick a model from /v1/models
+hum1izer llm --url <url>      # your own server: llama.cpp, vllm, ollama, openrouter
+hum1izer llm                  # show what is configured
+hum1izer llm --forget         # wipe it
+```
+
+The key lives in a user file, not in the repository:
+`$XDG_CONFIG_HOME/hum1izer/config.yaml`, otherwise
+`~/.config/hum1izer/config.yaml`, mode `0600`. Resolution order: flag, the
+project `.hum1izer.yaml`, the user file, then `OPENAI_BASE_URL`,
+`OPENAI_MODEL`, `OPENAI_API_KEY`.
+
+## Fitting the limits to a repository
+
+```bash
+hum1izer calibrate .
+hum1izer calibrate --write --max-lines 2 --max-line 95 .
+```
+
+Shows the spread of comment lengths across the repository and the price of every
+candidate limit, leaving the decision to a person. Norms differ: in the Linux
+kernel the 95th percentile of line length is 69 characters, in a large
+TypeScript monorepo it is 95, and one threshold does not fit both.
+
+License headers, pragmas and blocks marked `hum1izer:keep` are excluded from the
+measurement - the check does not look at them either.
+
+Only structural limits are calibrated. Vocabulary rules catch deviation from the
+human norm, and fitting their threshold to a repository full of machine text
+would just legalize it.
+
 ## Fixing by hash
 
 The tool not only shows findings, it applies the fix, so that a model doesn't
@@ -642,7 +718,9 @@ Semantics: meaning-level calques, irony, translationese, empty imagery,
 "figurative zero". This is fundamentally not catchable with regexes; for
 that you need the humanizer-ru skill itself, with a model.
 
-There is no text rewriting either: hum1izer only shows and advises.
+There is no rewriting of its own either: the rules only show and advise. The
+prose comes from a model, and only when it is called from `tui`; it reaches the
+file only after a person has looked at the diff and agreed.
 
 No code complexity either - no cyclomatic or cognitive complexity, no
 maintainability index. That is a job for `golangci-lint` (`cyclop`, `gocognit`,
