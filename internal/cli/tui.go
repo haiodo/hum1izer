@@ -10,9 +10,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/haiodo/hum1izer/internal/baseline"
 	"github.com/haiodo/hum1izer/internal/code"
@@ -30,8 +33,11 @@ const tuiUsage = `hum1izer tui - разобрать находки руками.
   tab, shift+tab   next and previous pane
   arrows, j k      move in the list
   d                delete the block
-  space            keep it as is, the block goes to the baseline
-  a                ask the model to rewrite it
+  enter            menu of actions for the current scope
+  space            keep it as is; in the files pane it marks a file for the batch
+  a                ask the model to rewrite this block
+  A                ask it for every block of the selected files at once
+  R                review the suggestions one by one in a separate screen
   y                accept the suggestion, n discards it
   m                pick another model, the choice is saved
   c                settings: limits and which languages to scan
@@ -77,6 +83,8 @@ const (
 	accentText  = lipgloss.Color("#e4e2e9")
 	borderIdle  = lipgloss.Color("#403c49")
 	textFaint   = lipgloss.Color("#817b8e")
+	diffDel     = lipgloss.Color("#aa6e70") // приглушённый красный, было
+	diffAdd     = lipgloss.Color("#5d9871") // приглушённый зелёный, стало
 )
 
 var (
@@ -87,6 +95,8 @@ var (
 	tuiFaint  = lipgloss.NewStyle().Foreground(textFaint)
 	tuiKeepOn = lipgloss.NewStyle().Foreground(accentSoft)
 	tuiPane   = lipgloss.NewStyle().Bold(true).Foreground(accentHover)
+	tuiDel    = lipgloss.NewStyle().Foreground(diffDel)
+	tuiAdd    = lipgloss.NewStyle().Foreground(diffAdd)
 )
 
 func runTUI(args []string) int {
@@ -148,7 +158,8 @@ func runTUI(args []string) int {
 	// значения по умолчанию экран остаётся пустым.
 	m := tuiModel{root: root, opts: o, basePath: *basePath,
 		maxLine: *maxLine, done: map[string]bool{}, src: map[string][]string{},
-		suggest: map[string]string{}, noted: map[string]bool{}, width: 100, height: 30}
+		suggest: map[string]string{}, noted: map[string]bool{},
+		selected: map[string]bool{}, picked: map[string]bool{}, width: 100, height: 30}
 	m.llm, m.llmErr = newLLM(cfg, *llmURL, *llmModel, *llmKey)
 	if code := m.rescan(); code != 0 {
 		return code
@@ -189,21 +200,30 @@ type tuiModel struct {
 	focus                      int
 	ruleIdx, fileIdx, blockIdx int
 
-	done    map[string]bool     // что уже применено, ключ mark(item)
-	src     map[string][]string // строки файлов для показа кода вокруг блока
-	suggest map[string]string   // что модель предложила взамен, до принятия
-	llm     *llm.Client
-	llmErr  string // почему клиента нет: показывается при первой же попытке
-	usage   llm.Usage
-	calls   int
-	picker  *modelPicker    // не nil, пока выбирают модель
-	cfgEdit *settings       // не nil, пока открыт экран настроек
-	note    *todoInput      // не nil, пока пишут заметку в todo.md
-	noted   map[string]bool // блоки, по которым заметка уже есть
-	busy    string
-	status  string
-	width   int
-	height  int
+	done     map[string]bool     // что уже применено, ключ mark(item)
+	src      map[string][]string // строки файлов для показа кода вокруг блока
+	suggest  map[string]string   // что модель предложила взамен, до принятия
+	llm      *llm.Client
+	llmErr   string // почему клиента нет: показывается при первой же попытке
+	usage    llm.Usage
+	calls    int
+	pending  int             // сколько запросов к модели сейчас в полёте
+	picker   *modelPicker    // не nil, пока выбирают модель
+	cfgEdit  *settings       // не nil, пока открыт экран настроек
+	note     *todoInput      // не nil, пока пишут заметку в todo.md
+	review   *review         // не nil, пока идёт разбор предложений
+	menu     *menu           // не nil, пока открыто меню действий
+	confirm  *confirmBox     // не nil, пока спрашиваем да/нет
+	pick     *blockPick      // не nil, пока отмечают блоки
+	picked   map[string]bool // блоки, выбранные вручную; пусто - берём весь охват
+	queue    []code.Item     // блоки, ждущие очереди к модели
+	batch    bool            // идёт пачка: по её концу сам откроется разбор
+	selected map[string]bool // файлы, отмеченные под прогон модели
+	noted    map[string]bool // блоки, по которым заметка уже есть
+	busy     string
+	status   string
+	width    int
+	height   int
 }
 
 // newLLM: флаг, потом .hum1izer.yaml, потом переменные окружения. Ошибку не
@@ -225,7 +245,9 @@ func newLLM(cfg config.Config, url, model, key string) (*llm.Client, string) {
 	return cl, ""
 }
 
-func mark(it code.Item) string { return it.Hash + "\t" + it.File + fmt.Sprint(it.Start) }
+// mark - ключ блока в картах решений. Без номера строки: правка выше сдвигает
+// строки, и ключ с номером терялся бы вместе с решением по блоку.
+func mark(it code.Item) string { return it.Hash + "\t" + it.File }
 
 func (m *tuiModel) rescan() int {
 	items, _, _, exit := collectItems([]string{m.root}, m.opts)
@@ -379,30 +401,53 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.picker = &p
 		return m, nil
 	case suggestMsg:
+		m.pending = max(m.pending-1, 0)
 		m.busy = ""
 		m.calls++
 		m.usage.In += msg.usage.In
 		m.usage.Out += msg.usage.Out
 		if msg.err != nil {
+			if wait, limited := llm.RetryAfter(msg.err); limited {
+				if it, ok := m.itemByKey(msg.key); ok {
+					m.queue = append([]code.Item{it}, m.queue...)
+				}
+				m.status = fmt.Sprintf("rate limit, waiting %s, %d left", wait.Round(time.Second), len(m.queue))
+				return m, tea.Tick(wait, func(time.Time) tea.Msg { return resumeMsg{} })
+			}
 			m.status = "model: " + msg.err.Error()
-			return m, nil
+			return m.pump()
 		}
 		if msg.text == "" {
 			m.status = "model returned empty text"
-			return m, nil
+			return m.pump()
 		}
 		it, ok := m.itemByKey(msg.key)
-		if n := m.renderedLines(it, msg.text); ok && n > m.opts.maxLines {
+		// max_lines 0 в настройках означает "не считать", и переспрашивать
+		// тогда не за что: иначе каждый ответ уходил бы на второй круг.
+		if n := m.renderedLines(it, msg.text); ok && m.opts.maxLines > 0 && n > m.opts.maxLines {
 			if !msg.retry {
+				m.pending++
 				return m, m.retryRewrite(it, msg.text, n)
 			}
 			m.status = fmt.Sprintf("suggestion is %d lines, limit is %d - check before accepting", n, m.opts.maxLines)
 			m.suggest[msg.key] = msg.text
-			return m, nil
+			return m.pump()
 		}
 		m.suggest[msg.key] = msg.text
-		m.status = "suggestion ready: y accept, n discard"
-		return m, nil
+		// Ответ длиннее исходника - не сокращение. Считаем строки прозы: у
+		// блока /** */ рамка занимает две строки, но текстом не считается.
+		if was := proseLines(it.Raw); ok && was > 0 && m.renderedLines(it, msg.text) > was {
+			m.status = fmt.Sprintf("suggestion is longer than the original (%d lines), check it", was)
+			return m.pump()
+		}
+		if left := m.pending + len(m.queue); left > 0 {
+			m.status = fmt.Sprintf("%d ready, %d left", len(m.suggest), left)
+		} else {
+			m.status = fmt.Sprintf("suggestions ready: %d", len(m.suggest))
+		}
+		return m.pump()
+	case resumeMsg:
+		return m.pump()
 	case editorDone:
 		if msg.err != nil {
 			m.status = "editor: " + msg.err.Error()
@@ -419,6 +464,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.settingsKey(msg)
 		case m.note != nil:
 			return m.noteKey(msg)
+		case m.review != nil:
+			return m.reviewKey(msg)
+		case m.confirm != nil:
+			return m.confirmKey(msg)
+		case m.pick != nil:
+			return m.pickKey(msg)
+		case m.menu != nil:
+			return m.menuKey(msg)
 		}
 		return m.key(msg)
 	}
@@ -459,9 +512,19 @@ func (m tuiModel) pickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 type editorDone struct{ err error }
 
+// resumeMsg будит очередь после паузы по лимиту эндпоинта.
+type resumeMsg struct{}
+
 func (m tuiModel) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "ctrl+c", "esc":
+	case "esc":
+		if len(m.selected)+len(m.picked) > 0 {
+			m.selected, m.picked = map[string]bool{}, map[string]bool{}
+			m.status = "selection cleared"
+			return m, nil
+		}
+		return m, tea.Quit
+	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "tab", "right", "l":
 		m.focus = (m.focus + 1) % 3
@@ -478,9 +541,21 @@ func (m tuiModel) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		return m.applyOne(markDelete, ""), nil
 	case " ":
+		if m.focus == paneFiles {
+			return m.toggleFile(), nil
+		}
 		return m.applyOne(markKeep, ""), nil
 	case "a":
 		return m.askRewrite()
+	case "A":
+		return m.askRewriteFile()
+	case "R":
+		keys := m.reviewKeys()
+		if len(keys) == 0 {
+			m.status = "no suggestions yet, press A"
+			return m, nil
+		}
+		m.review = &review{keys: keys}
 	case "y":
 		if it, ok := m.curItem(); ok && m.suggest[mark(it)] != "" {
 			return m.applyOne(markRewrite, m.suggest[mark(it)]), nil
@@ -490,6 +565,8 @@ func (m tuiModel) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			delete(m.suggest, mark(it))
 			m.status = "suggestion discarded"
 		}
+	case "enter":
+		return m.openMenu(), nil
 	case "m":
 		return m.askModels()
 	case "c":
@@ -515,6 +592,16 @@ func (m tuiModel) applyOne(kind byte, body string) tea.Model {
 	if !ok {
 		return m
 	}
+	next := m.applyItem(it, kind, body).(tuiModel)
+	if next.blockIdx < len(next.curItems())-1 {
+		next.blockIdx++
+	}
+	return next
+}
+
+// applyItem пишет решение по конкретному блоку: из панели блоков или из экрана
+// ревью, где курсор ходит по файлам.
+func (m tuiModel) applyItem(it code.Item, kind byte, body string) tea.Model {
 	key := mark(it)
 	if m.done[key] {
 		m.status = "already done"
@@ -578,9 +665,6 @@ func (m tuiModel) applyOne(kind byte, body string) tea.Model {
 	delete(m.suggest, key)
 	m.refreshEdited(key, found.Start, kind == markDelete)
 	m.refreshFile(it.File)
-	if m.blockIdx < len(m.curItems())-1 {
-		m.blockIdx++
-	}
 	m.status += fmt.Sprintf("  (done %d of %d)", len(m.done), len(m.items))
 	return m
 }
@@ -675,16 +759,57 @@ func (m tuiModel) askRewrite() (tea.Model, tea.Cmd) {
 		m.status = "rewrite unavailable: " + m.llmErr
 		return m, nil
 	}
-	if m.busy != "" {
+	m.pending++
+	m.status = "asking the model..."
+	return m, m.rewriteCmd(it)
+}
+
+// toggleFile отмечает файл под прогон модели. Отмеченные обрабатывает A, и это
+// единственный способ взять больше одного файла за раз.
+func (m tuiModel) toggleFile() tea.Model {
+	files := m.curFiles()
+	if m.fileIdx >= len(files) {
+		return m
+	}
+	path := files[m.fileIdx].path
+	if m.selected[path] {
+		delete(m.selected, path)
+	} else {
+		m.selected[path] = true
+	}
+	m.status = fmt.Sprintf("selected files: %d", len(m.selected))
+	return m
+}
+
+// askRewriteFile просит переписать все блоки отмеченных файлов, а без отметок -
+// текущего. Решать потом, подряд, на экране ревью.
+func (m tuiModel) askRewriteFile() (tea.Model, tea.Cmd) {
+	if m.llm == nil {
+		m.status = "rewrite unavailable: " + m.llmErr
 		return m, nil
 	}
+	var cmds []tea.Cmd
+	for _, it := range m.pickedItems() {
+		key := mark(it)
+		if m.done[key] || m.suggest[key] != "" {
+			continue
+		}
+		cmds = append(cmds, m.rewriteCmd(it))
+	}
+	if len(cmds) == 0 {
+		m.status = "nothing left to rewrite here"
+		return m, nil
+	}
+	m.pending += len(cmds)
+	m.status = fmt.Sprintf("asking the model for %d blocks...", len(cmds))
+	return m, tea.Batch(cmds...)
+}
 
+func (m tuiModel) rewriteCmd(it code.Item) tea.Cmd {
 	req := m.rewriteRequest(it)
 	key := mark(it)
 	client := m.llm
-	m.busy = "asking the model..."
-	m.status = m.busy
-	return m, func() tea.Msg {
+	return func() tea.Msg {
 		text, use, err := client.Rewrite(context.Background(), req)
 		return suggestMsg{key: key, text: text, usage: use, err: err}
 	}
@@ -737,6 +862,11 @@ func (m tuiModel) settingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.cfgEdit = nil
+	// Пересканирование стоит секунды: без записи в файл настройки те же, и
+	// повторять прогон незачем.
+	if !st.saved {
+		return m, nil
+	}
 	return m.reloadConfig()
 }
 
@@ -771,6 +901,26 @@ func (m tuiModel) itemByKey(key string) (code.Item, bool) {
 		}
 	}
 	return code.Item{}, false
+}
+
+// proseLines - сколько в блоке строк текста без рамки: /** и */ строками
+// комментария считаются, а строками прозы нет.
+func proseLines(raw string) int {
+	n := 0
+	for _, l := range strings.Split(raw, "\n") {
+		t := strings.TrimSpace(l)
+		for _, p := range []string{"/**", "*/", "///", "//", "/*", "#"} {
+			if strings.HasPrefix(t, p) {
+				t = strings.TrimSpace(t[len(p):])
+				break
+			}
+		}
+		t = strings.TrimSpace(strings.TrimPrefix(t, "*"))
+		if t != "" && !strings.HasPrefix(t, "@") {
+			n++
+		}
+	}
+	return n
 }
 
 // renderedLines: сколько строк займёт ответ после вставки. Предел из настроек
@@ -834,6 +984,7 @@ func (m tuiModel) rewriteRequest(it code.Item) llm.Request {
 		Comment:  it.Raw,
 		Code:     m.codeAround(it, 12),
 		MaxLines: m.opts.maxLines,
+		MaxLine:  m.maxLine,
 		Lang:     "en",
 	}
 	// Тот же порог, по которому набор правил выбирается в CheckComment.
@@ -906,16 +1057,66 @@ func editorCmd(file string, line int) (string, []string) {
 	return name, args
 }
 
+// View рисует три панели, а экраны выбора модели, настроек, заметки и ревью
+// кладёт поверх них окном: так видно, из какого места приложения они открыты.
 func (m tuiModel) View() string {
-	if m.picker != nil {
-		return m.picker.View()
+	base := m.panes()
+	switch {
+	case m.picker != nil:
+		return overlay(base, m.picker.View(), m.width, m.height)
+	case m.cfgEdit != nil:
+		return overlay(base, m.cfgEdit.View(m.overlayWidth()), m.width, m.height)
+	case m.note != nil:
+		return overlay(base, m.note.View(m.overlayWidth()), m.width, m.height)
+	case m.review != nil:
+		return overlay(base, m.reviewView(), m.width, m.height)
+	case m.confirm != nil:
+		return overlay(base, m.confirm.View(m.overlayWidth()), m.width, m.height)
+	case m.pick != nil:
+		return overlay(base, m.pick.View(m.overlayWidth()), m.width, m.height)
+	case m.menu != nil:
+		return overlay(base, m.menu.View(m.overlayWidth()), m.width, m.height)
 	}
-	if m.cfgEdit != nil {
-		return m.cfgEdit.View(m.width)
+	return base
+}
+
+// overlayWidth - ширина содержимого окна: две трети экрана, но не уже 50.
+func (m tuiModel) overlayWidth() int { return max(m.width*2/3, 50) }
+
+// overlay врезает окно в экран, оставляя панели видимыми по бокам. Строка
+// режется через ansi: склейка по рунам рвёт коды цвета.
+func overlay(base, box string, width, height int) string {
+	lines := strings.Split(base, "\n")
+	boxLines := strings.Split(strings.TrimRight(tuiActive.Render(box), "\n"), "\n")
+	for len(lines) < height {
+		lines = append(lines, "")
 	}
-	if m.note != nil {
-		return m.note.View(m.width)
+	boxW := lipgloss.Width(boxLines[0])
+	left := max((width-boxW)/2, 0)
+	top := max((len(lines)-len(boxLines))/2, 0)
+	for i, b := range boxLines {
+		if top+i >= len(lines) {
+			break
+		}
+		lines[top+i] = spliceLine(lines[top+i], b, left, boxW, width)
 	}
+	return strings.Join(lines, "\n")
+}
+
+// spliceLine кладёт box в строку с колонки at, сохраняя то, что слева и справа.
+func spliceLine(base, box string, at, boxW, width int) string {
+	head := ansi.Truncate(base, at, "")
+	if n := ansi.StringWidth(head); n < at {
+		head += strings.Repeat(" ", at-n)
+	}
+	tail := ansi.TruncateLeft(base, at+boxW, "")
+	if ansi.StringWidth(base) <= at+boxW {
+		tail = ""
+	}
+	return head + "\x1b[0m" + box + "\x1b[0m" + tail
+}
+
+func (m tuiModel) panes() string {
 	// Три колонки плюс рамки и отступы: 4 знака на панель.
 	inner := m.width - 12
 	if inner < 48 {
@@ -938,12 +1139,30 @@ func (m tuiModel) View() string {
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, panes...)
 
-	help := "tab pane  j/k move  d delete  space keep  a rewrite  y accept  n discard  m model  t todo  c settings  e editor  r rescan  q quit"
 	status := m.status
 	if status == "" {
 		status = fmt.Sprintf("%d findings, %d done", len(m.items), len(m.done))
 	}
-	return m.header() + "\n" + body + "\n" + tuiFaint.Render(trimTo(help, m.width)) + "\n" + trimTo(status, m.width)
+	return m.header() + "\n" + body + "\n" + tuiFaint.Render(trimTo(m.help(), m.width)) + "\n" + trimTo(status, m.width)
+}
+
+// help показывает только то, что работает в этой панели. Прогон модели, ревью
+// и пачка ушли в меню по Enter, и перечислять их внизу больше незачем.
+func (m tuiModel) help() string {
+	parts := []string{"enter menu", "tab pane", "j/k move"}
+	switch m.focus {
+	case paneFiles:
+		parts = append(parts, "space select file")
+	case paneBlocks:
+		parts = append(parts, "d delete", "space keep", "t todo", "e edit")
+		if it, ok := m.curItem(); ok && m.suggest[mark(it)] != "" {
+			parts = append(parts, "y accept", "n discard")
+		}
+	}
+	if len(m.selected)+len(m.picked) > 0 {
+		parts = append(parts, "esc clear")
+	}
+	return strings.Join(append(parts, "c settings", "r rescan", "q quit"), "   ")
 }
 
 // header - строка о модели и расходе токенов: без неё непонятно, куда уходит
@@ -992,7 +1211,11 @@ func (m tuiModel) filesLines(w, h int) []string {
 	for _, f := range files {
 		// Путь режется слева: у двух index.ts из разных плагинов различим
 		// только хвост, а имени файла для выбора мало.
-		rows = append(rows, fmt.Sprintf("%3d  %s", len(f.items), tailTo(m.rel(f.path), w-5)))
+		box := "  "
+		if m.selected[f.path] {
+			box = tuiAdd.Render("x ")
+		}
+		rows = append(rows, fmt.Sprintf("%s%3d  %s", box, len(f.items), tailTo(m.rel(f.path), w-7)))
 	}
 	return window(rows, m.fileIdx, h-1, w, m.focus == paneFiles)
 }
@@ -1008,6 +1231,8 @@ func (m tuiModel) blocksLines(w, h int) []string {
 		switch {
 		case m.done[mark(it)]:
 			row = tuiKeepOn.Render("done ") + tuiFaint.Render(head+" "+first)
+		case m.suggest[mark(it)] != "":
+			row = tuiAdd.Render("diff ") + head + " " + first
 		case m.noted[mark(it)]:
 			row = tuiKeepOn.Render("todo ") + head + " " + first
 		}
@@ -1058,24 +1283,49 @@ func (m tuiModel) blockDetail(it code.Item, w int) []string {
 			out = append(out, trimTo("    │ "+l, w))
 		}
 	}
+	sug := m.suggest[mark(it)]
 	for n := from; n <= to; n++ {
 		body := expandTabs(lines[n-1])
-		if it.End >= 0 && n >= it.Start && n <= end {
+		inBlock := it.End >= 0 && n >= it.Start && n <= end
+		switch {
+		case inBlock && sug != "":
+			// Предложение есть - блок показывается как удалённые строки диффа,
+			// новый текст идёт следом зелёным.
+			out = append(out, tuiDel.Render(trimTo(fmt.Sprintf("  - %4d %s", n, body), w)))
+		case inBlock:
 			out = append(out, trimTo(fmt.Sprintf("  ▸ %4d %s", n, body), w))
-			continue
+		default:
+			out = append(out, tuiFaint.Render(trimTo(fmt.Sprintf("    %4d %s", n, body), w)))
 		}
-		out = append(out, tuiFaint.Render(trimTo(fmt.Sprintf("    %4d %s", n, body), w)))
+		if n == end && sug != "" {
+			// Пять пробелов - ширина колонки с номером строки у строк "-",
+			// иначе старый и новый текст не встают друг под другом.
+			for _, l := range m.renderSuggestion(it, sug) {
+				out = append(out, tuiAdd.Render(trimTo("  + "+strings.Repeat(" ", 5)+l, w)))
+			}
+		}
 	}
 	for _, f := range it.Findings {
 		out = append(out, trimTo(tuiFaint.Render("    → "+f.Rule+": "+f.Fix), w))
 	}
-	if sug := m.suggest[mark(it)]; sug != "" {
-		out = append(out, trimTo(tuiKeepOn.Render("    suggested (y accept, n discard):"), w))
-		for _, l := range strings.Split(sug, "\n") {
-			out = append(out, trimTo("    + "+l, w))
+	return out
+}
+
+// renderSuggestion показывает предложение так, как оно ляжет в файл: с тем же
+// отступом и маркером. Сравнивать текст без маркеров с кодом неудобно.
+func (m tuiModel) renderSuggestion(it code.Item, body string) []string {
+	first := strings.SplitN(it.Raw, "\n", 2)[0]
+	head := strings.TrimLeft(first, " \t")
+	// Отступ берётся из строки файла: в Raw он есть только у блока, который
+	// начинается с начала строки, а у вложенного комментария его нет.
+	indent := first[:len(first)-len(head)]
+	if lines := m.fileLines(it.File); it.Start >= 1 && it.Start <= len(lines) {
+		l := lines[it.Start-1]
+		if i := strings.Index(l, head); i >= 0 && strings.TrimSpace(l[:i]) == "" {
+			indent = l[:i]
 		}
 	}
-	return out
+	return renderComment(indent, head, body, m.maxLine)
 }
 
 // fileLines держит прочитанные файлы до следующего скана: курсор ходит по

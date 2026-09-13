@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/haiodo/hum1izer/internal/baseline"
 	"github.com/haiodo/hum1izer/internal/code"
@@ -273,5 +274,261 @@ func TestEditedBlockBoundsRefresh(t *testing.T) {
 	}
 	if len(lines) == 0 {
 		t.Error("код вокруг удалённого блока пропал")
+	}
+}
+
+// Предложение показывается диффом: строки блока уходят под "-", новый текст под
+// "+" и ровно в том виде, в каком он ляжет в файл.
+func TestSuggestionRendersAsDiff(t *testing.T) {
+	m, _ := tuiOnFile(t, "package a\n\nfunc f() {\n\t// первая строка про всё\n\t// вторая строка\n\tx := 1\n}\n")
+	m.maxLine = 100
+	it := m.items[0]
+	m.suggest[mark(it)] = "коротко и по делу"
+
+	var minus, plus []string
+	for _, l := range m.blockDetail(it, 200) {
+		switch {
+		case strings.Contains(l, "  - "):
+			minus = append(minus, l)
+		case strings.Contains(l, "  + "):
+			plus = append(plus, l)
+		}
+	}
+	if len(minus) != 2 {
+		t.Errorf("строк '-' %d, ожидалось 2: %q", len(minus), minus)
+	}
+	if len(plus) != 1 {
+		t.Fatalf("строк '+' %d, ожидалось 1: %q", len(plus), plus)
+	}
+	if !strings.Contains(plus[0], "// коротко и по делу") {
+		t.Errorf("новый текст без маркера комментария: %q", plus[0])
+	}
+	if strings.Contains(strings.Join(m.blockDetail(it, 200), " "), "▸") {
+		t.Error("при открытом диффе стрелки лишние")
+	}
+}
+
+// A просит модель переписать все блоки файла, кроме уже сделанных и тех, где
+// предложение уже есть.
+func TestRewriteWholeFileSkipsDoneAndSuggested(t *testing.T) {
+	body := "package a\n\n// первый комментарий про всё\nx := 1\n\n// второй комментарий про всё\ny := 2\n\n// третий комментарий про всё\nz := 3\n"
+	m, _ := tuiOnFile(t, body)
+	if len(m.items) != 3 {
+		t.Fatalf("блоков %d", len(m.items))
+	}
+	m.llm, _ = newLLMForTest(t, "stub")
+	m.done[mark(m.items[0])] = true
+	m.suggest[mark(m.items[1])] = "уже есть"
+
+	next, cmd := m.askRewriteFile()
+	if cmd == nil {
+		t.Fatal("команда не создана")
+	}
+	if got := next.(tuiModel).pending; got != 1 {
+		t.Errorf("в полёте %d запросов, ожидался 1", got)
+	}
+
+	m.done[mark(m.items[2])] = true
+	next, cmd = m.askRewriteFile()
+	if cmd != nil {
+		t.Error("просить нечего, а команда создана")
+	}
+	if !strings.Contains(next.(tuiModel).status, "nothing left") {
+		t.Errorf("статус %q", next.(tuiModel).status)
+	}
+}
+
+// Пробел в панели файлов отмечает файл, A прогоняет модель по всем отмеченным,
+// а не только по текущему.
+func TestSelectedFilesDriveBatch(t *testing.T) {
+	dir := t.TempDir()
+	var items []code.Item
+	for _, name := range []string{"a.go", "b.go", "c.go"} {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("package a\n\n// длинный комментарий про всё на свете\nx := 1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cmts, err := code.ExtractComments(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		items = append(items, code.Item{Hash: baseline.Hash(cmts[0].Text), File: p,
+			Start: cmts[0].Start, End: cmts[0].End, Raw: cmts[0].Raw,
+			Findings: []code.ItemFinding{{Rule: "R", Fix: "f"}}})
+	}
+	m := tuiModel{root: dir, maxLine: 100, done: map[string]bool{}, suggest: map[string]string{},
+		noted: map[string]bool{}, selected: map[string]bool{}, src: map[string][]string{},
+		items: items, width: 120, height: 30}
+	m.buildTree()
+	m.llm, _ = newLLMForTest(t, "stub")
+
+	// без отметок - только текущий файл
+	if got := len(m.pickedItems()); got != 1 {
+		t.Errorf("без отметок взято %d блоков, ожидался 1", got)
+	}
+
+	m.focus = paneFiles
+	m = send(m, " ").(tuiModel)
+	m.fileIdx = 2
+	m = send(m, " ").(tuiModel)
+	if len(m.selected) != 2 {
+		t.Fatalf("отмечено файлов %d, ожидалось 2", len(m.selected))
+	}
+	if got := len(m.pickedItems()); got != 2 {
+		t.Errorf("по отметкам взято %d блоков, ожидалось 2", got)
+	}
+	next, cmd := m.askRewriteFile()
+	if cmd == nil {
+		t.Fatal("команда не создана")
+	}
+	if got := next.(tuiModel).pending; got != 2 {
+		t.Errorf("в полёте %d, ожидалось 2", got)
+	}
+}
+
+// Экран ревью идёт по готовым предложениям: y применяет и убирает блок из
+// очереди, n отбрасывает, esc закрывает.
+func TestReviewWalksSuggestions(t *testing.T) {
+	body := "package a\n\n// первый комментарий про всё\nx := 1\n\n// второй комментарий про всё\ny := 2\n"
+	m, file := tuiOnFile(t, body)
+	m.selected = map[string]bool{}
+	for _, it := range m.items {
+		m.suggest[mark(it)] = "коротко"
+	}
+	m = send(m, "R").(tuiModel)
+	if m.review == nil || len(m.review.keys) != 2 {
+		t.Fatalf("очередь ревью: %+v", m.review)
+	}
+
+	after := send(m, "y").(tuiModel)
+	if len(after.review.keys) != 1 {
+		t.Errorf("после y в очереди %d, ожидался 1", len(after.review.keys))
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "// коротко") {
+		t.Errorf("правка не записалась:\n%s", raw)
+	}
+
+	after = send(after, "n").(tuiModel)
+	if after.review != nil {
+		t.Errorf("очередь пуста, экран должен закрыться: %+v", after.review)
+	}
+	if len(after.suggest) != 0 {
+		t.Errorf("предложения остались: %v", after.suggest)
+	}
+}
+
+// Рамка блока /** */ - это не строки прозы. По ней же считает правило про
+// длину, и сравнение с ответом модели должно считать так же.
+func TestProseLinesIgnoresFrame(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want int
+	}{
+		{"/**\n * Remove a document. For documents be aware all\n * attached will be removed as well.\n */", 2},
+		{"// одна строка", 1},
+		{"// первая\n// вторая", 2},
+		{"/* однострочный блок */", 1},
+		{"/**\n * Sends a message.\n * @param to recipient\n * @returns id\n */", 1},
+		{"#!/usr/bin/env node", 1},
+	}
+	for _, c := range cases {
+		if got := proseLines(c.raw); got != c.want {
+			t.Errorf("proseLines(%q) = %d, ожидалось %d", c.raw, got, c.want)
+		}
+	}
+}
+
+// Окно ложится поверх панелей, а не вместо них: строки основного экрана выше и
+// ниже окна должны остаться.
+func TestOverlayKeepsBaseAroundBox(t *testing.T) {
+	base := strings.Join([]string{"первая", "вторая", "третья", "четвёртая", "пятая", "шестая", "седьмая"}, "\n")
+	got := overlay(base, "окно", 40, 7)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 7 {
+		t.Fatalf("строк %d, ожидалось 7:\n%s", len(lines), got)
+	}
+	if !strings.Contains(lines[0], "первая") || !strings.Contains(lines[6], "седьмая") {
+		t.Errorf("края основного экрана затёрты:\n%s", got)
+	}
+	if !strings.Contains(got, "окно") {
+		t.Error("окна не видно")
+	}
+	// Окно занимает три строки с рамкой и стоит по центру.
+	if !strings.Contains(lines[3], "окно") {
+		t.Errorf("окно не по центру:\n%s", got)
+	}
+}
+
+// По бокам от окна остаётся основной экран, а не пустота.
+func TestOverlayKeepsSidesOfLine(t *testing.T) {
+	base := strings.Repeat("L", 20) + strings.Repeat("R", 20)
+	got := spliceLine(base, "[окно]", 15, 6, 40)
+	plain := ansi.Strip(got)
+	if !strings.HasPrefix(plain, strings.Repeat("L", 15)) {
+		t.Errorf("левая часть срезана: %q", plain)
+	}
+	if !strings.HasSuffix(plain, strings.Repeat("R", 19)) {
+		t.Errorf("правая часть срезана: %q", plain)
+	}
+	if !strings.Contains(plain, "[окно]") {
+		t.Errorf("окна нет: %q", plain)
+	}
+	if n := ansi.StringWidth(got); n != 40 {
+		t.Errorf("ширина строки %d, ожидалось 40: %q", n, plain)
+	}
+	// Короткая строка добивается пробелами, а не обрезает окно.
+	short := ansi.Strip(spliceLine("ab", "[окно]", 15, 6, 40))
+	if !strings.Contains(short, "[окно]") || !strings.HasPrefix(short, "ab ") {
+		t.Errorf("короткая строка: %q", short)
+	}
+}
+
+// Новый комментарий встаёт на место старого, поэтому в диффе он должен стоять
+// с тем же отступом. В Raw отступа нет - он берётся из строки файла.
+func TestSuggestionKeepsIndentOfBlock(t *testing.T) {
+	m, _ := tuiOnFile(t, "package a\n\nfunc f() {\n\tif x {\n\t\t// первый комментарий про всё\n\t\ty := 1\n\t}\n}\n")
+	m.maxLine = 100
+	it := m.items[0]
+	m.suggest[mark(it)] = "коротко"
+
+	var minus, plus string
+	for _, l := range m.blockDetail(it, 200) {
+		switch {
+		case strings.Contains(l, "  - "):
+			minus = l
+		case strings.Contains(l, "  + "):
+			plus = l
+		}
+	}
+	if minus == "" || plus == "" {
+		t.Fatal("дифф не собрался")
+	}
+	at := func(s, needle string) int { return strings.Index(ansi.Strip(s), needle) }
+	if a, b := at(minus, "//"), at(plus, "//"); a != b {
+		t.Errorf("маркеры не совпали по колонке: %d и %d\n%s\n%s", a, b, ansi.Strip(minus), ansi.Strip(plus))
+	}
+}
+
+// Ключ блока не должен зависеть от номера строки: правка выше сдвигает строки,
+// и решения по остальным блокам файла терялись бы вместе с ключом.
+func TestMarkSurvivesLineShift(t *testing.T) {
+	m, _ := tuiOnFile(t, "package a\n\n// первый комментарий про всё\nx := 1\n\n// второй комментарий про всё\ny := 2\n")
+	second := mark(m.items[1])
+	wasStart := m.items[1].Start // items общий для копий модели, значение берём до правки
+	m.suggest[second] = "коротко"
+
+	after := send(m, "d").(tuiModel) // удаляем первый блок, второй уезжает вверх
+	if after.items[1].Start >= wasStart {
+		t.Fatal("строка второго блока не сдвинулась, проверять нечего")
+	}
+	if mark(after.items[1]) != second {
+		t.Errorf("ключ сменился: %q -> %q", second, mark(after.items[1]))
+	}
+	if after.suggest[mark(after.items[1])] == "" {
+		t.Error("предложение по второму блоку потерялось после правки первого")
 	}
 }

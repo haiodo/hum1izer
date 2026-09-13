@@ -3,7 +3,7 @@ PKG     := .
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/haiodo/hum1izer/internal/cli.Version=$(VERSION)
 
-.PHONY: all build test fmt vet lint check install skills clean
+.PHONY: all build test fmt vet lint check install skills skill clean
 
 all: check build
 
@@ -34,3 +34,7 @@ skills: install
 
 clean:
 	rm -f $(BIN)
+
+# SKILL.md в корне читают каталоги скиллов; собирается из internal/skill/body.md
+skill:
+	go run . install --repo > SKILL.md

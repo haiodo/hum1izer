@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -81,18 +83,23 @@ type Request struct {
 	Code     string
 	Findings []string
 	MaxLines int
+	MaxLine  int    // предел длины строки из настроек
 	Lang     string // ru или en - на каком языке написан комментарий
 	Note     string // претензия к прошлому ответу, если просим переделать
 }
 
+// В промпте бюджет назван в символах, а не в строках: строки нарезает уже
+// вставка, по ширине из настроек, и модель этой ширины не знает.
 const system = `Ты правишь комментарии в коде. Верни только новый текст комментария.
 
 Правила:
-- Без маркеров //, /*, #, * - только текст. Перенос строки означает новую строку комментария.
-- Не больше %d строк.
+- Без маркеров //, /*, #, * - только текст.
+- Весь ответ не длиннее %d символов: это %d строк по %d. Короче - лучше.
+- Не разбивай на строки сам, перенос сделают за тебя. Абзац нужен - ставь перевод строки.
 - Сохрани язык оригинала (%s) и все факты: имена, числа, условия, предупреждения.
 - Убери пересказ кода, вводные обороты, восторги и воду. Оставь причину решения.
 - Если сокращать нечего и комментарий уже по делу - верни его как есть.
+- Не обрывай фразу на середине: лучше выбрось мысль целиком, чем оставь хвост.
 - Никаких пояснений, кавычек и разметки вокруг ответа.`
 
 // Usage - сколько токенов ушло и вернулось за один вызов. Локальные серверы
@@ -113,6 +120,13 @@ func (c *Client) Rewrite(ctx context.Context, r Request) (string, Usage, error) 
 	if maxLines < 1 {
 		maxLines = 2
 	}
+	maxLine := r.MaxLine
+	if maxLine < 20 {
+		maxLine = 100
+	}
+	// Запас на маркер и отступ: до них доберётся renderComment, а модели важен
+	// порядок величины, а не точность до символа.
+	budget := maxLines * (maxLine - 10)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "Комментарий:\n%s\n", r.Comment)
@@ -132,7 +146,7 @@ func (c *Client) Rewrite(ctx context.Context, r Request) (string, Usage, error) 
 	resp, err := c.api.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: c.model,
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(fmt.Sprintf(system, maxLines, lang)),
+			openai.SystemMessage(fmt.Sprintf(system, budget, maxLines, maxLine-10, lang)),
 			openai.UserMessage(b.String()),
 		},
 	})
@@ -144,6 +158,28 @@ func (c *Client) Rewrite(ctx context.Context, r Request) (string, Usage, error) 
 		return "", u, errors.New("модель вернула пустой ответ")
 	}
 	return clean(resp.Choices[0].Message.Content), u, nil
+}
+
+// retryRe вытаскивает срок из тела 429: у разных эндпоинтов он пишется
+// по-разному, но секунды в тексте есть почти всегда.
+var retryRe = regexp.MustCompile(`retry (?:in|after) (\d+)\s*s`)
+
+// RetryAfter - сколько ждать после отказа по лимиту. Тип ошибки SDK лежит в
+// internal и наружу не выведен, поэтому разбирается текст.
+func RetryAfter(err error) (time.Duration, bool) {
+	if err == nil {
+		return 0, false
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "429") && !strings.Contains(strings.ToLower(msg), "rate limit") {
+		return 0, false
+	}
+	if m := retryRe.FindStringSubmatch(msg); m != nil {
+		if n, e := strconv.Atoi(m[1]); e == nil && n > 0 {
+			return time.Duration(n)*time.Second + time.Second, true
+		}
+	}
+	return 15 * time.Second, true
 }
 
 // clean снимает то, что модель добавляет поверх просьбы: блок ```, маркеры

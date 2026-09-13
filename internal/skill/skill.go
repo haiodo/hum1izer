@@ -16,12 +16,11 @@ var body string
 
 const name = "hum1izer"
 
-// Описание двуязычное: по нему агент решает, брать скилл или нет, а просьба
-// приходит то на английском, то на русском.
-const description = "Check prose, code comments and commit messages for officialese, stock " +
-	"phrases and traces of AI generation. Use when asked to make comments sound human, " +
-	"clean up AI slop, or review text or commit messages. Русские триггеры: сделать " +
-	"комментарии человечнее, почистить AI-слоп, отревьюить текст или коммиты."
+// Описание двуязычное: просьба приходит то на английском, то на русском.
+// Предел листинга - 1536 знаков, места хватает, но повторы тут лишние.
+const description = "Finds officialese, cliches and AI traces in prose, code comments and " +
+	"commit messages. Ask it to humanize comments, clean AI slop, review text or commits. " +
+	"Русский: очеловечить текст и комментарии, почистить AI-слоп, отревьюить коммиты."
 
 // Target - куда и с какой шапкой класть скилл.
 type Target struct {
@@ -92,6 +91,7 @@ const usage = `hum1izer install - поставить скилл для аген�
   --dir D    корень вместо домашнего каталога
   --force    перезаписать, если файл уже есть
   --print    вывести SKILL.md в stdout
+  --repo     вывести SKILL.md для корня репозитория (make skill)
 `
 
 // Run выполняет подкоманду install. Возвращает код выхода.
@@ -106,8 +106,13 @@ func Run(args []string, version string) int {
 	root := fs.String("dir", "", "корень вместо домашнего каталога")
 	force := fs.Bool("force", false, "перезаписать существующий файл")
 	print := fs.Bool("print", false, "вывести SKILL.md в stdout")
+	repo := fs.Bool("repo", false, "вывести SKILL.md для корня репозитория")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *repo {
+		fmt.Print(RepoFile())
+		return 0
 	}
 	if *print {
 		fmt.Print(render(targets[0], version))
@@ -155,6 +160,39 @@ func Run(args []string, version string) int {
 		fmt.Printf("  + %-10s %s\n", t.Flag, path)
 	}
 	return exit
+}
+
+// repoHead - шапка для SKILL.md в корне: каталоги скиллов читают этот файл и
+// ждут в нём установку и список агентов рядом с телом инструкции.
+const repoHead = `---
+name: ` + name + `
+description: "` + description + `"
+license: MIT
+homepage: https://github.com/haiodo/hum1izer
+user-invocable: true
+---
+
+## Install
+
+` + "```bash" + `
+go install github.com/haiodo/hum1izer@latest   # или бинарь из releases
+hum1izer install --all                         # разложить этот скилл по агентам
+` + "```" + `
+
+Готовые бинари под macOS, Linux и Windows - в
+[releases](https://github.com/haiodo/hum1izer/releases). Сервисов и ключей
+инструменту не нужно: всё считается локально.
+
+## Supported assistants
+
+Claude Code, Codex, opencode, Hermes, Pi, agents. ` + "`hum1izer install --all`" + `
+кладёт SKILL.md в каталог каждого, ` + "`--claude`" + ` и остальные флаги - поштучно.
+`
+
+// RepoFile - содержимое SKILL.md для корня. Версия не подставляется: файл
+// лежит в git, и строка с ней меняла бы его на каждом релизе впустую.
+func RepoFile() string {
+	return repoHead + "\n" + strings.TrimSpace(body) + "\n"
 }
 
 func render(t Target, version string) string {

@@ -145,9 +145,18 @@ categories:
   - name: Комментарий-обещание
     fix: Поставь задачу со ссылкой или убери - "временно" живёт годами
     rules:
+      # "will be removed" без подлежащего ловило описание поведения кода:
+      # "attached documents will be removed as well". Обещание узнаётся по
+      # подлежащему (this, it, the code) или по сроку после него.
       - name: temporary / for now / will be removed
-        word_re: '(?:temporary|temporarily|for\s+now|will\s+be\s+(?:removed|replaced|rewritten)|remove\s+(?:this\s+)?later|legacy\s+code)'
-        tests: [{text: "temporary until the migration ends", expect: true}, {text: "contemporary records", expect: false}]
+        word_re: '(?:temporary|temporarily|for\s+now|(?:this|it|these|that|the\s+\w+)\s+will\s+be\s+(?:removed|replaced|rewritten)|will\s+be\s+(?:removed|replaced|rewritten)\s+(?:soon|later|in|once|after|when|before)|remove\s+(?:this\s+)?later|legacy\s+code)'
+        tests:
+          - {text: "temporary until the migration ends", expect: true}
+          - {text: "this will be removed", expect: true}
+          - {text: "will be removed in v2", expect: true}
+          - {text: "the shim will be replaced once the API lands", expect: true}
+          - {text: "contemporary records", expect: false}
+          - {text: "attached documents will be removed as well", expect: false}
       - name: временно / пока что / потом переделать
         word_re: '(?:временн(?:о|ый|ая|ое)|пока\s+(?:что|так)|потом\s+(?:переделать|убрать|заменить)|убрать\s+позже|легаси)'
         tests: [{text: "временно захардкожено", expect: true}, {text: "временные ряды", expect: false}]

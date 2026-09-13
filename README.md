@@ -10,6 +10,15 @@ It only counts what can be caught with grep and arithmetic: 21 hard bans, 19
 marker categories, rhythm, nominalization, document structure, a cleanliness
 score of 0-100.
 
+The tool writes no prose of its own. Findings can be worked through by hand -
+`hum1izer tui ./src` opens three panes with the code around every block - and if
+an OpenAI-compatible endpoint is configured, that screen can ask a model to
+rewrite a block. The answer is shown as a diff and reaches the file only when
+you press `y`.
+
+This is not what the word humanizer usually sells: there is no goal of passing a
+detector here. Findings go to the author, the decision stays with a person.
+
 The idea and the initial rule sets are from
 [ilyautov/humanizer-ru](https://github.com/ilyautov/humanizer-ru) (MIT, (c) Ilya Utov);
 the corpus-based justification for the thresholds is there too: AINL-Eval, LLMTrace, M4-ru.
@@ -84,16 +93,25 @@ not be touched: license headers, `//go:generate`, `//nolint`,
 ## Usage
 
 ```bash
-hum1izer текст.md                      # отчёт с рекомендациями
-hum1izer --lang en post.md             # английский набор правил
-hum1izer --genre academic статья.md    # снять маркеры, законные для регистра
-hum1izer --quiet docs/*.md             # одна строка на файл
-hum1izer --json текст.md               # машинный вывод
-cat draft.txt | hum1izer -             # из stdin
+hum1izer text.md                       # report with recommendations
+hum1izer --lang en post.md             # English rule set
+hum1izer --genre academic paper.md     # drop markers that are fine for the register
+hum1izer --quiet docs/*.md             # one line per file
+hum1izer --json text.md                # machine-readable output
+cat draft.txt | hum1izer -             # from stdin
 
-hum1izer --code ./src                  # комментарии в коде
-hum1izer --code .                      # то же плюс последние 20 коммитов
+hum1izer --code ./src                  # comments in code
+hum1izer --code .                      # plus the last 20 commit messages
+hum1izer --code --langs go ./src       # one language only
+hum1izer --code --only "TODO без владельца" .   # one rule only
+
+hum1izer tui ./src                     # work through the findings by hand
+hum1izer calibrate .                   # fit the limits to this repository
+hum1izer llm --key <key>               # model used for rewriting
 ```
+
+A directory prints a summary by rule without the findings themselves: on a tree
+there are thousands of them. Name a file and the findings are printed in full.
 
 | Flag | What it does |
 |---|---|
@@ -110,6 +128,8 @@ hum1izer --code .                      # то же плюс последние 2
 | `--max-lines N` | a comment longer than this many lines is a finding, `0` - don't count (2) |
 | `--max-line N` | a comment line longer than this many characters is a finding, `0` - don't count (100) |
 | `--skip-tests` | skip `_test.go`, `*.test.*`, `*.spec.*` |
+| `--only` | keep only these rules or categories, comma separated |
+| `--langs` | scan only these languages: `c`, `cpp`, `go`, `ts`, `js`, `svelte`, `swift`, `java`, `kotlin` |
 | `--config F` | use this settings file instead of searching for `.hum1izer.yaml` |
 | `--no-config` | ignore `.hum1izer.yaml` |
 | `--baseline F` | check against the snapshot, report only what's new |
@@ -190,8 +210,8 @@ Generated files are also skipped (`Code generated ... DO NOT EDIT`,
 headers: `SPDX` anywhere, `Copyright` or `Licensed under` in the first five
 lines of a file.
 
-`.go`, `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.svelte`, `.swift`,
-`.java`, `.kt`, `.kts` are parsed. Go is read through `go/parser`; the rest
+`.c`, `.h`, `.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.go`, `.ts`, `.tsx`, `.js`,
+`.jsx`, `.mjs`, `.cjs`, `.svelte`, `.swift`, `.java`, `.kt`, `.kts` are parsed. Go is read through `go/parser`; the rest
 through a character-by-character scanner that knows about strings and
 templates, so a `//` inside a string is not taken for a comment. The scanner
 is split by language: regex literals only in JS and TS, triple quotes in Java
@@ -305,7 +325,7 @@ comments:
   skip_tests: false
 
 languages:
-  only: []          # go, ts, js, svelte, swift, java, kotlin. Пусто - все
+  only: []          # c, cpp, go, ts, js, svelte, swift, java, kotlin. Пусто - все
   ignore: [swift]
 
 exclude:            # ** проходит через каталоги, * внутри сегмента

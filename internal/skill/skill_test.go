@@ -56,3 +56,20 @@ func TestNoTargetsIsError(t *testing.T) {
 		t.Errorf("без агентов ожидался код 2, получен %d", code)
 	}
 }
+
+// SKILL.md в корне репозитория читают каталоги скиллов. Он генерируется из
+// того же body.md, поэтому не должен расходиться с ним молча.
+func TestRepoSkillUpToDate(t *testing.T) {
+	got, err := os.ReadFile(filepath.Join("..", "..", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("SKILL.md в корне нет: %v (собрать: make skill)", err)
+	}
+	if string(got) != RepoFile() {
+		t.Error("SKILL.md разошёлся с body.md, пересобери: make skill")
+	}
+	for _, want := range []string{"## Install", "## Supported assistants", "homepage:"} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("в SKILL.md нет раздела %q", want)
+		}
+	}
+}

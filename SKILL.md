@@ -1,3 +1,27 @@
+---
+name: hum1izer
+description: "Finds officialese, cliches and AI traces in prose, code comments and commit messages. Ask it to humanize comments, clean AI slop, review text or commits. Русский: очеловечить текст и комментарии, почистить AI-слоп, отревьюить коммиты."
+license: MIT
+homepage: https://github.com/haiodo/hum1izer
+user-invocable: true
+---
+
+## Install
+
+```bash
+go install github.com/haiodo/hum1izer@latest   # или бинарь из releases
+hum1izer install --all                         # разложить этот скилл по агентам
+```
+
+Готовые бинари под macOS, Linux и Windows - в
+[releases](https://github.com/haiodo/hum1izer/releases). Сервисов и ключей
+инструменту не нужно: всё считается локально.
+
+## Supported assistants
+
+Claude Code, Codex, opencode, Hermes, Pi, agents. `hum1izer install --all`
+кладёт SKILL.md в каталог каждого, `--claude` и остальные флаги - поштучно.
+
 # hum1izer
 
 Checks prose, code comments, and commit messages for officialese, cliches, and
