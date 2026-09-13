@@ -154,7 +154,7 @@ Repeat until it reaches zero or stops falling.
    hash from the report header (`55dc2ad977ba` above), never by line number:
 
    ```bash
-   hum1izer fix --block 55dc2ad977ba --text "Причина, а не пересказ" --write ./src
+   hum1izer fix --block 55dc2ad977ba --text "The reason, not a retelling" --write ./src
    hum1izer fix --block a832aeaac8cf --delete --write ./src
    ```
 
@@ -320,8 +320,8 @@ languages, exclusions, and disabled rules. Respect it: if a rule is
 disabled in the project, that's the norm for this project.
 
 ```bash
-hum1izer init          # создать файл настроек, вписав найденные языки
-hum1izer init --print  # посмотреть, ничего не записывая
+hum1izer init          # write a settings file with the languages it found
+hum1izer init --print  # show it without writing anything
 ```
 
 `hum1izer fix --auto ./src` deletes what needs no judgement at all:
@@ -337,14 +337,14 @@ don't forget to recreate it, or the progress won't be recorded.
 ## Other modes
 
 ```bash
-hum1izer текст.md                  # русская проза, отчёт с рекомендациями
-hum1izer --lang en post.md         # английский набор правил
-hum1izer --code --commits 50 .     # плюс последние 50 сообщений коммитов
-hum1izer --code --max-lines 12 .   # мягче: длинным считать блок от 13 строк
-hum1izer --code --quiet .          # одна строка, годится для CI
-hum1izer --code --format jsonl .   # машинный вывод, если разбирает скрипт
-hum1izer --code --langs go,ts .    # только эти языки
-hum1izer --code --only "TODO без владельца" .   # только это правило
+hum1izer text.md                   # Russian prose, report with advice
+hum1izer --lang en post.md         # English rule set
+hum1izer --code --commits 50 .     # plus the last 50 commit messages
+hum1izer --code --max-lines 12 .   # softer: a block counts as long from 13 lines
+hum1izer --code --quiet .          # one line, fits CI
+hum1izer --code --format jsonl .   # machine output, when a script reads it
+hum1izer --code --langs go,ts .    # these languages only
+hum1izer --code --only "TODO без владельца" .   # this rule only
 ```
 
 A directory prints a summary by rule, a named file prints the findings
@@ -356,20 +356,21 @@ These exist for the human at the keyboard. Don't run them on your own: the
 first one takes over the terminal, the other two write settings.
 
 ```bash
-hum1izer tui ./src        # три панели: правила, файлы, блоки; правка руками
-hum1izer calibrate .      # разброс длин по репозиторию и цена каждого предела
-hum1izer llm --key <ключ> # адрес, ключ и выбор модели для переписывания
+hum1izer tui ./src        # three panes: rules, files, blocks; fixing by hand
+hum1izer calibrate .      # spread of lengths in the repo and the price of each limit
+hum1izer llm --key <key>  # endpoint, key and the model used for rewriting
 ```
 
-`tui` - это экран разбора: код вокруг каждого блока, удаление и keep одной
-клавишей, заметка в `todo.md`, прогон модели по отмеченным файлам с показом
-ответа диффом и отдельным экраном ревью. Всё, что он делает, доступно и
-командами - `fix`, `--keep`, `--baseline`, - поэтому тебе он не нужен.
+`tui` is a screen for going through findings: the code around every block,
+delete and keep on one key, a note into `todo.md`, a model pass over selected
+files with the answer shown as a diff and a separate review screen. Everything
+it does is also available as commands - `fix`, `--keep`, `--baseline` - so you
+do not need it.
 
-`calibrate` подбирает пределы длины под репозиторий: нормы у проектов разные,
-и порог из коробки не универсален. Если пользователь жалуется, что
-"Длинный комментарий" срабатывает на всё подряд, посоветуй эту команду, а не
-правь `max_lines` наугад.
+`calibrate` fits the length limits to a repository: norms differ between
+projects and the default threshold is not universal. When the user complains
+that "Длинный комментарий" fires on everything, point them at this command
+instead of guessing at `max_lines`.
 
 Without installing: `go run github.com/haiodo/hum1izer@latest --code ./src`.
 

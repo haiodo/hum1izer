@@ -65,7 +65,8 @@ file renamed over the old one. If the sum does not match, nothing changes.
 hum1izer install --claude --codex --opencode --hermes --pi
 hum1izer install --all              # все сразу
 hum1izer install --claude --dir .   # в проект, а не в домашний каталог
-hum1izer install --print            # посмотреть SKILL.md, ничего не ставя
+hum1izer install --print            # print SKILL.md without installing it
+hum1izer install --repo             # SKILL.md for the repository root (make skill)
 make skills                         # собрать и поставить всем
 ```
 
