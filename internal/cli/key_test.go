@@ -243,3 +243,35 @@ func TestTooLongSuggestionAsksAgainOnce(t *testing.T) {
 		t.Errorf("статус без предупреждения: %q", after.status)
 	}
 }
+
+// После своей же правки блок меняет границы: переписанный стал короче, у
+// удалённого подсвечивать нечего. Иначе стрелки остаются на чужих строках.
+func TestEditedBlockBoundsRefresh(t *testing.T) {
+	body := "package a\n\nfunc f() {\n\t// первая строка про всё на свете\n\t// вторая строка\n\t// третья строка\n\tx := 1\n}\n"
+
+	m, _ := tuiOnFile(t, body)
+	m.suggest[mark(m.items[0])] = "коротко"
+	after := send(m, "y").(tuiModel)
+	if got := after.items[0].End; got != after.items[0].Start {
+		t.Errorf("после замены End=%d, Start=%d - блок стал однострочным", got, after.items[0].Start)
+	}
+	if !strings.Contains(after.items[0].Raw, "коротко") {
+		t.Errorf("Raw не обновился: %q", after.items[0].Raw)
+	}
+
+	m2, _ := tuiOnFile(t, body)
+	del := send(m2, "d").(tuiModel)
+	if del.items[0].End != -1 {
+		t.Errorf("после удаления End=%d, ожидалось -1", del.items[0].End)
+	}
+	// В деталях блока стрелок быть не должно, а код вокруг остаётся.
+	lines := del.blockDetail(del.items[0], 120)
+	for _, l := range lines {
+		if strings.Contains(l, "▸") {
+			t.Errorf("стрелка на удалённом блоке: %q", l)
+		}
+	}
+	if len(lines) == 0 {
+		t.Error("код вокруг удалённого блока пропал")
+	}
+}

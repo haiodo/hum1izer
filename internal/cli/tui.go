@@ -35,6 +35,7 @@ const tuiUsage = `hum1izer tui - разобрать находки руками.
   y                accept the suggestion, n discards it
   m                pick another model, the choice is saved
   c                settings: limits and which languages to scan
+  t                write a note about this block into todo.md
   e                open in $EDITOR at the right line
   r                rescan
   q                quit
@@ -67,13 +68,25 @@ const (
 	markRewrite = 'r'
 )
 
+// Палитра intabia2 из packages/theme/styles/_accent-colors.scss, тон тот же.
+// Насыщенность снижена с 63% и 83% до 22-26%: в терминале исходные кричат.
+const (
+	accentBase  = lipgloss.Color("#594c76") // приглушённый фиолетовый, курсор и шапка
+	accentHover = lipgloss.Color("#a46595") // приглушённая маджента, активная панель
+	accentSoft  = lipgloss.Color("#b3abc4") // серо-лавандовый, сделанное
+	accentText  = lipgloss.Color("#e4e2e9")
+	borderIdle  = lipgloss.Color("#403c49")
+	textFaint   = lipgloss.Color("#817b8e")
+)
+
 var (
-	tuiTitle  = lipgloss.NewStyle().Bold(true)
-	tuiActive = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("205")).Padding(0, 1)
-	tuiIdle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(0, 1)
-	tuiCursor = lipgloss.NewStyle().Background(lipgloss.Color("205")).Foreground(lipgloss.Color("232"))
-	tuiFaint  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	tuiKeepOn = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
+	tuiTitle  = lipgloss.NewStyle().Bold(true).Background(accentBase).Foreground(accentText).Padding(0, 1)
+	tuiActive = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(accentHover).Padding(0, 1)
+	tuiIdle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderIdle).Padding(0, 1)
+	tuiCursor = lipgloss.NewStyle().Background(accentBase).Foreground(accentText)
+	tuiFaint  = lipgloss.NewStyle().Foreground(textFaint)
+	tuiKeepOn = lipgloss.NewStyle().Foreground(accentSoft)
+	tuiPane   = lipgloss.NewStyle().Bold(true).Foreground(accentHover)
 )
 
 func runTUI(args []string) int {
@@ -135,7 +148,7 @@ func runTUI(args []string) int {
 	// значения по умолчанию экран остаётся пустым.
 	m := tuiModel{root: root, opts: o, basePath: *basePath,
 		maxLine: *maxLine, done: map[string]bool{}, src: map[string][]string{},
-		suggest: map[string]string{}, width: 100, height: 30}
+		suggest: map[string]string{}, noted: map[string]bool{}, width: 100, height: 30}
 	m.llm, m.llmErr = newLLM(cfg, *llmURL, *llmModel, *llmKey)
 	if code := m.rescan(); code != 0 {
 		return code
@@ -183,8 +196,10 @@ type tuiModel struct {
 	llmErr  string // почему клиента нет: показывается при первой же попытке
 	usage   llm.Usage
 	calls   int
-	picker  *modelPicker // не nil, пока выбирают модель
-	cfgEdit *settings    // не nil, пока открыт экран настроек
+	picker  *modelPicker    // не nil, пока выбирают модель
+	cfgEdit *settings       // не nil, пока открыт экран настроек
+	note    *todoInput      // не nil, пока пишут заметку в todo.md
+	noted   map[string]bool // блоки, по которым заметка уже есть
 	busy    string
 	status  string
 	width   int
@@ -402,6 +417,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.pickerKey(msg)
 		case m.cfgEdit != nil:
 			return m.settingsKey(msg)
+		case m.note != nil:
+			return m.noteKey(msg)
 		}
 		return m.key(msg)
 	}
@@ -478,6 +495,10 @@ func (m tuiModel) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		st := newSettings(m.opts.cfg, m.opts)
 		m.cfgEdit = &st
+	case "t":
+		if it, ok := m.curItem(); ok {
+			m.note = &todoInput{item: it}
+		}
 	case "e":
 		return m.openEditor()
 	case "r":
@@ -555,12 +576,39 @@ func (m tuiModel) applyOne(kind byte, body string) tea.Model {
 
 	m.done[key] = true
 	delete(m.suggest, key)
+	m.refreshEdited(key, found.Start, kind == markDelete)
 	m.refreshFile(it.File)
 	if m.blockIdx < len(m.curItems())-1 {
 		m.blockIdx++
 	}
 	m.status += fmt.Sprintf("  (done %d of %d)", len(m.done), len(m.items))
 	return m
+}
+
+// refreshEdited поправляет только что исправленный блок. По хэшу его уже не
+// найти - текст другой, - а старый End оставит стрелки на чужих строках.
+func (m *tuiModel) refreshEdited(key string, start int, deleted bool) {
+	for i := range m.items {
+		if mark(m.items[i]) != key {
+			continue
+		}
+		if deleted {
+			m.items[i].End = -1
+			return
+		}
+		cmts, err := code.ExtractComments(m.items[i].File)
+		if err != nil {
+			return
+		}
+		for _, c := range cmts {
+			if c.Start == start {
+				m.items[i].End, m.items[i].Raw = c.End, c.Raw
+				return
+			}
+		}
+		m.items[i].End = -1
+		return
+	}
 }
 
 // refreshFile: правка сдвинула строки ниже, поэтому у остальных блоков этого
@@ -583,6 +631,8 @@ func (m *tuiModel) refreshFile(path string) {
 			m.items[i].Start, m.items[i].End = c.Start, c.End
 			continue
 		}
+		// Хэша нет - блок либо удалён, либо переписан: границы уже выставил
+		// refreshEdited, трогать их нельзя.
 		m.done[mark(m.items[i])] = true
 	}
 	m.buildTree()
@@ -638,6 +688,30 @@ func (m tuiModel) askRewrite() (tea.Model, tea.Cmd) {
 		text, use, err := client.Rewrite(context.Background(), req)
 		return suggestMsg{key: key, text: text, usage: use, err: err}
 	}
+}
+
+// noteKey ведёт ввод заметки: enter пишет строку в todo.md, esc отменяет.
+func (m tuiModel) noteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	in, done, save := m.note.update(msg)
+	if !done {
+		m.note = &in
+		return m, nil
+	}
+	m.note = nil
+	if !save {
+		return m, nil
+	}
+	path, err := appendTodo(m.root, m.opts.cfg.Path, in.item, in.text)
+	if err != nil {
+		m.status = err.Error()
+		return m, nil
+	}
+	m.noted[mark(in.item)] = true
+	m.status = "written to " + shortName(path)
+	if m.blockIdx < len(m.curItems())-1 {
+		m.blockIdx++
+	}
+	return m, nil
 }
 
 // settingsKey: пока открыт экран настроек, клавиши уходят ему. На закрытии
@@ -839,6 +913,9 @@ func (m tuiModel) View() string {
 	if m.cfgEdit != nil {
 		return m.cfgEdit.View(m.width)
 	}
+	if m.note != nil {
+		return m.note.View(m.width)
+	}
 	// Три колонки плюс рамки и отступы: 4 знака на панель.
 	inner := m.width - 12
 	if inner < 48 {
@@ -861,7 +938,7 @@ func (m tuiModel) View() string {
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, panes...)
 
-	help := "tab pane  j/k move  d delete  space keep  a rewrite  y accept  n discard  m model  c settings  e editor  r rescan  q quit"
+	help := "tab pane  j/k move  d delete  space keep  a rewrite  y accept  n discard  m model  t todo  c settings  e editor  r rescan  q quit"
 	status := m.status
 	if status == "" {
 		status = fmt.Sprintf("%d findings, %d done", len(m.items), len(m.done))
@@ -897,7 +974,7 @@ func (m tuiModel) pane(id int, title string, lines []string, w, h int) string {
 	if m.focus == id {
 		st = tuiActive
 	}
-	body := tuiTitle.Render(title) + "\n" + strings.Join(lines, "\n")
+	body := tuiPane.Render(title) + "\n" + strings.Join(lines, "\n")
 	return st.Width(w).Height(h).Render(body)
 }
 
@@ -928,19 +1005,30 @@ func (m tuiModel) blocksLines(w, h int) []string {
 		head := fmt.Sprintf("%d:", it.Start)
 		first := strings.SplitN(strings.TrimSpace(it.Raw), "\n", 2)[0]
 		row := head + " " + first
-		if m.done[mark(it)] {
+		switch {
+		case m.done[mark(it)]:
 			row = tuiKeepOn.Render("done ") + tuiFaint.Render(head+" "+first)
+		case m.noted[mark(it)]:
+			row = tuiKeepOn.Render("todo ") + head + " " + first
 		}
 		if i == m.blockIdx {
+			// Раскрытый блок отбивается пустой строкой сверху и снизу: иначе
+			// код вокруг него сливается с соседними блоками списка.
+			if len(rows) > 0 {
+				rows = append(rows, "")
+			}
 			cursorRow = len(rows)
 			if m.focus == paneBlocks {
 				row = tuiCursor.Render(trimTo(row, w))
 			}
+			rows = append(rows, trimTo(row, w))
+			rows = append(rows, m.blockDetail(it, w)...)
+			if i < len(items)-1 {
+				rows = append(rows, "")
+			}
+			continue
 		}
 		rows = append(rows, trimTo(row, w))
-		if i == m.blockIdx {
-			rows = append(rows, m.blockDetail(it, w)...)
-		}
 	}
 	return window(rows, cursorRow, h-1, w, false)
 }
@@ -950,8 +1038,9 @@ func (m tuiModel) blocksLines(w, h int) []string {
 func (m tuiModel) blockDetail(it code.Item, w int) []string {
 	const around = 3
 	lines := m.fileLines(it.File)
+	// End < 0 ставится удалением: код вокруг показываем, подсвечивать нечего.
 	end := it.End
-	if end < it.Start {
+	if end <= 0 {
 		end = it.Start
 	}
 	from, to := it.Start-around, end+around
@@ -971,7 +1060,7 @@ func (m tuiModel) blockDetail(it code.Item, w int) []string {
 	}
 	for n := from; n <= to; n++ {
 		body := expandTabs(lines[n-1])
-		if n >= it.Start && n <= end {
+		if it.End >= 0 && n >= it.Start && n <= end {
 			out = append(out, trimTo(fmt.Sprintf("  ▸ %4d %s", n, body), w))
 			continue
 		}
