@@ -74,27 +74,26 @@ const (
 	markRewrite = 'r'
 )
 
-// Палитра intabia2 из packages/theme/styles/_accent-colors.scss, тон тот же.
-// Насыщенность снижена с 63% и 83% до 22-26%: в терминале исходные кричат.
+// Палитра из release/tui в urban-robotics. Акцент там светлый, а текст на нём
+// тёмный: выделение читается на любом фоне терминала, хоть светлом.
 const (
-	accentBase  = lipgloss.Color("#594c76") // приглушённый фиолетовый, курсор и шапка
-	accentHover = lipgloss.Color("#a46595") // приглушённая маджента, активная панель
-	accentSoft  = lipgloss.Color("#b3abc4") // серо-лавандовый, сделанное
-	accentText  = lipgloss.Color("#e4e2e9")
-	borderIdle  = lipgloss.Color("#403c49")
-	textFaint   = lipgloss.Color("#817b8e")
-	diffDel     = lipgloss.Color("#aa6e70") // приглушённый красный, было
-	diffAdd     = lipgloss.Color("#5d9871") // приглушённый зелёный, стало
+	accent     = lipgloss.Color("#B7BEFF") // шапка, курсор, активная панель
+	accentText = lipgloss.Color("#242835") // текст поверх акцента
+	accentSoft = lipgloss.Color("#C678DD") // сделанное
+	borderIdle = lipgloss.Color("#3A3F4F")
+	textFaint  = lipgloss.Color("#9B9B9B")
+	diffDel    = lipgloss.Color("#FF6B6B") // было
+	diffAdd    = lipgloss.Color("#50C067") // стало
 )
 
 var (
-	tuiTitle  = lipgloss.NewStyle().Bold(true).Background(accentBase).Foreground(accentText).Padding(0, 1)
-	tuiActive = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(accentHover).Padding(0, 1)
+	tuiTitle  = lipgloss.NewStyle().Bold(true).Background(accent).Foreground(accentText).Padding(0, 1)
+	tuiActive = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(accent).Padding(0, 1)
 	tuiIdle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderIdle).Padding(0, 1)
-	tuiCursor = lipgloss.NewStyle().Background(accentBase).Foreground(accentText)
+	tuiCursor = lipgloss.NewStyle().Background(accent).Foreground(accentText)
 	tuiFaint  = lipgloss.NewStyle().Foreground(textFaint)
 	tuiKeepOn = lipgloss.NewStyle().Foreground(accentSoft)
-	tuiPane   = lipgloss.NewStyle().Bold(true).Foreground(accentHover)
+	tuiPane   = lipgloss.NewStyle().Bold(true).Foreground(accent)
 	tuiDel    = lipgloss.NewStyle().Foreground(diffDel)
 	tuiAdd    = lipgloss.NewStyle().Foreground(diffAdd)
 )
