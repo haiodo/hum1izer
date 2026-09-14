@@ -257,18 +257,72 @@ rewriting such a comment, check the function with what the project already runs:
   `sonarjs/cognitive-complexity`.
 
 Don't install a linter the project doesn't have, and don't score complexity by
-eye. hum1izer measures none of this and never will: it reads text, not syntax
-trees.
+eye. hum1izer measures none of this: it reads text, not syntax trees.
 
 If the function trips one of those linters, the fix is the function, not a
 better comment. Split it, name the parts, and the comment gets shorter on its
-own - often it disappears. If the project runs no linter at all, say so and
-leave the code alone; guessed thresholds are worse than none. Common tooling
-defaults, for reference only and not measured on this code: cyclomatic
-complexity under 10, function under 100 lines, inheritance depth under 5,
-coupling under 5, maintainability index over 65. The project's own numbers win: a
-repo that sets `min-complexity: 30` and `funlen: 240` has made that call, and
-reporting its functions against the defaults above is noise.
+own - often it disappears. The project's own numbers win: a repo that sets
+`min-complexity: 30` and `funlen: 240` has made that call, and reporting its
+functions against a default is noise.
+
+If the project runs no linter at all, these are the thresholds to fall back on.
+They come from a measurement over 13 corpora, 4 languages and about 100k
+functions - Go stdlib, the Linux kernel, sqlite, coreutils and several working
+repositories:
+
+- **Nesting depth at most 4, aim for 3.** The median across every corpus is 1.
+  Human code breaks this in 0.2-0.9% of functions, so a hit is a signal rather
+  than noise. Linux CodingStyle says the same in words: "If you need more than
+  3 levels of indentation, you're screwed."
+- **Function at most 60 significant lines. At most 5 parameters.**
+- **Don't use cyclomatic complexity as a threshold.** The usual "under 10" is
+  broken by 5-21% of functions in code nobody would call sloppy, and the only
+  way to lower it is to split a function out - which collides with the rule
+  against helpers for single-use operations. Depth has no such conflict: it
+  drops with early return and guard clauses, that is by deleting code.
+
+## Writing the code, not just the comment
+
+A comment that needs three paragraphs usually sits on code that needed a
+different shape. When you do touch the code, these are the rules that keep it
+reading like a person wrote it. They are the other half of the same job: the
+measurement above found that repositories written under them carry four times
+fewer trivial one-line wrappers than the Go standard library, at a nesting
+depth on par with the best corpora in the sample.
+
+**Reach for what exists before writing anything.** In order: a helper already in
+this codebase, the standard library, a native platform feature, a dependency
+already installed, your own code last. Grep before you write - re-implementing
+what lives two files over is the most common kind of slop there is.
+
+**Write less.**
+
+- The simplest thing that works. No speculative features, no future-proofing.
+- No abstraction with one implementation: no interface for one type, no factory
+  for one product, no config for a value that never changes.
+- No helper for a single-use operation. Three similar lines beat a premature
+  abstraction.
+- No error handling for cases that cannot happen.
+- Deletion over addition. Boring over clever - clever is what somebody decodes
+  at 3am.
+- Fewest files possible.
+
+**Fix the cause, not the symptom.** A bug report names a symptom. Grep every
+caller before editing: one guard in the shared function is a smaller diff than a
+guard in each caller, and patching only the path from the ticket leaves every
+sibling still broken. The smallest diff is right only after you have traced the
+whole flow - the smallest change in the wrong place is a second bug.
+
+**Comments: one or two lines, and only where the code cannot say it itself.**
+Don't add docstrings, comments, or type annotations to code you didn't change.
+Write the why, never the what - the reader can see the what. A deliberate
+simplification with a known ceiling is the exception worth a line: name the
+ceiling and the way out (`// ponytail: global lock, per-account locks if
+throughput matters`).
+
+Never simplify away: input validation at trust boundaries, error handling that
+prevents data loss, security measures, accessibility basics, or anything the
+person explicitly asked for.
 
 ## How to fix prose
 

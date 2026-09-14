@@ -726,8 +726,10 @@ file only after a person has looked at the diff and agreed.
 No code complexity either - no cyclomatic or cognitive complexity, no
 maintainability index. That is a job for `golangci-lint` (`cyclop`, `gocognit`,
 `nestif`, `funlen`, `dupl`) and for eslint (`complexity`, `max-depth`); the
-skill tells the agent to run them instead of guessing. hum1izer reads text, not
-syntax trees.
+skill tells the agent to run them instead of guessing, and when a project runs
+no linter at all it falls back on thresholds measured over 13 corpora - nesting
+depth at most 4, function at most 60 lines. hum1izer reads text, not syntax
+trees.
 
 ## Development
 
