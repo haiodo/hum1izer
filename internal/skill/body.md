@@ -242,9 +242,10 @@ own - often it disappears. The project's own numbers win: a repo that sets
 functions against a default is noise.
 
 If the project runs no linter at all, these are the thresholds to fall back on.
-They come from a measurement over 30 corpora, 7 languages and about 362k
-functions: the Linux kernel, PostgreSQL, sqlite, coreutils, Go stdlib, CPython,
-tokio, ripgrep, the Eclipse platform and several working repositories.
+They come from a measurement over 33 corpora, 7 languages, 587k functions and
+13.5M lines: the Linux kernel, PostgreSQL, sqlite, coreutils, Go stdlib, CPython,
+tokio, ripgrep, the Eclipse platform and JDT, DLTK and several working
+repositories.
 
 - **Nesting depth at most 4, aim for 3.** This is the one number that held
   everywhere. Median depth is 1 in every corpus measured, across C, Go, Java,
@@ -252,15 +253,21 @@ tokio, ripgrep, the Eclipse platform and several working repositories.
   functions, so a hit is a signal rather than background. In repositories with
   25 years of history the share does not move: eclipse.platform grew 34x, from
   1537 functions to 51956, and went from 1.11% to 1.09%. Linux CodingStyle puts
-  it in words: "If you need more than 3 levels of indentation, you're screwed."
+  it in words: "if you need more than 3 levels of indentation, you're screwed
+  anyway, and should fix your program". Count nested statements, not indent
+  levels: measured by indentation the same threshold is 5, because gofmt gives
+  `switch` an extra level.
 - **Function at most 60 significant lines.** This is where generated code
   actually drifts. Rust written by agents runs 45-50 lines at p95 against 29-34
   for tokio and ripgrep, with three times as many functions over 60 lines -
   while its nesting stays in the human range. Length is the symptom to watch,
   depth is the one to enforce.
-- **At most 5 parameters.**
+- **At most 5 parameters.** If meeting the line or parameter limit would mean
+  extracting a single-use helper, the project's rules about abstractions win:
+  keep the longer function.
 - **Don't use cyclomatic complexity as a threshold.** The usual "under 10" is
-  broken by 5-21% of functions in code nobody would call sloppy, and it drifts
+  broken by 11.9% of functions in the Go standard library and 13.0% in
+  PostgreSQL, and it drifts
   with age on its own: over 25 years eclipse.platform doubled its share while
   nesting stood still. Worse, the only way to lower it is to split a function
   out - which collides with the rule against helpers for single-use operations.

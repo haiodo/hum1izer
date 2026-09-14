@@ -3,7 +3,7 @@
 Инструменты замера формы кода. В поставку hum1izer не входят: каждый лежит
 отдельным модулем, `go build ./...` в корне их не видит.
 
-Появились из замера по 30 корпусам, 7 языкам и 362 тысячам функций: ядро Linux,
+Появились из замера по 33 корпусам, 7 языкам и 587 тысячам функций: ядро Linux,
 PostgreSQL, sqlite, coreutils, Go stdlib, CPython, tokio, ripgrep, платформа
 Eclipse и несколько рабочих репозиториев. Как его повторить - [METHOD.md](METHOD.md).
 
@@ -86,3 +86,6 @@ python3 rcs.py ~/archive/cvsrepo ./out
 нарушителей порогов: PostgreSQL за 30 лет, eclipse.platform и
 eclipse.platform.swt за 25, dltk.core за 18, org.eclipse.rcptt за 11 и
 tenniarb на Swift.
+
+`corpora.csv` - список всех корпусов замера: язык, версия, объём в строках по
+`cloc`, число функций, история из git и адрес источника.
