@@ -26,6 +26,7 @@ type Comment struct {
 	Raw   string `json:"raw"`  // исходные строки как есть, вместе с // и /* */
 	Lang  string `json:"lang"` // go, ts, svelte, swift, git
 	Next  string `json:"-"`    // первая строка кода после блока, для проверки пересказа
+	Depth int    `json:"-"`    // вложенность функции под блоком, 0 если там не функция
 	Doc   bool   `json:"-"`    // /** */, /// или /// - документирующий комментарий
 	SO    int    `json:"-"`    // смещение начала блока в байтах
 	EO    int    `json:"-"`    // смещение конца блока в байтах
@@ -47,7 +48,9 @@ var skipDirs = map[string]bool{
 	".rollup.cache": true, "__pycache__": true,
 }
 
-var generatedRe = regexp.MustCompile(`(?m)^(//|#|/\*) *Code generated .* DO NOT EDIT|@generated|sourceMappingURL=`)
+// Якорь нужен каждой ветке: без него "@generated" ловится в середине строки, и
+// файл с этим словом в коде объявляет сгенерированным сам себя.
+var generatedRe = regexp.MustCompile(`(?m)^(//|#|/\*|\*)[ *]*(Code generated .* DO NOT EDIT|@generated)|^//[#@] sourceMappingURL=`)
 
 // isGenerated: маркеры стоят либо в шапке, либо в самом конце
 // (sourceMappingURL у собранного JS), середину файла смотреть незачем.
@@ -94,10 +97,8 @@ func (f Filter) allow(root, path string) bool {
 	return true
 }
 
-// WalkCode собирает файлы с поддерживаемыми расширениями. Файл передаётся как есть.
-// В git-репозитории список берётся у самого git: так .gitignore соблюдается
-// точно, включая вложенные и глобальные правила, и собранный код в lib/ или
-// bundle/ не попадает под проверку.
+// WalkCode собирает файлы с поддерживаемыми расширениями. В git-репозитории
+// список берёт у самого git: так .gitignore соблюдается точно.
 func WalkCode(root string, f Filter) ([]string, error) {
 	st, err := os.Stat(root)
 	if err != nil {
@@ -128,9 +129,8 @@ func WalkCode(root string, f Filter) ([]string, error) {
 	return out, err
 }
 
-// ExtractComments достаёт блоки комментариев из файла. Для Go берём go/parser,
-// для остальных - посимвольный сканер: он знает про строки и шаблоны, поэтому
-// "//" внутри литерала за комментарий не считает.
+// ExtractComments достаёт блоки комментариев. Для Go - go/parser, для остальных
+// посимвольный сканер: он знает про строки и "//" внутри литерала не считает.
 func ExtractComments(path string) ([]Comment, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -175,6 +175,7 @@ func ExtractComments(path string) ([]Comment, error) {
 			Raw:   raw,
 			Lang:  lang,
 			Next:  codeFor(text, lines, s),
+			Depth: blockDepth(lines, s.end),
 			Doc:   isDoc(rawLines),
 			SO:    s.so,
 			EO:    minInt(s.eo, len(text)),
@@ -183,9 +184,8 @@ func ExtractComments(path string) ([]Comment, error) {
 	return out, nil
 }
 
-// span - комментарий в исходнике: строки для отчёта, байтовые смещения для
-// точного текста. Без смещений хвостовой комментарий утаскивал в блок код
-// перед "//", и такой блок разбирался парсером как код.
+// span - комментарий в исходнике: строки для отчёта, смещения для текста. Без
+// смещений хвостовой блок утаскивал код перед "//" и разбирался как код.
 type span struct {
 	start, end int // строки, с единицы
 	so, eo     int // смещения в байтах
@@ -379,8 +379,7 @@ var (
 )
 
 // svelteBlocks - содержимое <script> и <style>. Закрывающий тег ищется по имени
-// открывшего: одним regexp это не выразить, в RE2 нет обратных ссылок, а пара
-// <script>...</style> съела бы настоящий </script> вместе с комментариями за ним.
+// открывшего: в RE2 нет обратных ссылок, а <script>...</style> съела бы </script>.
 func svelteBlocks(src string) [][2]int {
 	var out [][2]int
 	for pos := 0; pos < len(src); {
@@ -418,9 +417,8 @@ func scanSvelte(src string) []span {
 	return out
 }
 
-// merge склеивает соседние комментарии в один блок: шапка из десяти // строк -
-// это один текст, а не десять находок. Хвостовой комментарий не склеивается ни
-// с чем: между ним и соседом лежит код.
+// merge склеивает соседние комментарии: шапка из десяти // строк - один текст,
+// а не десять находок. Хвостовой не склеивается: между ним и соседом код.
 func merge(spans []span) []span {
 	if len(spans) == 0 {
 		return nil
@@ -518,8 +516,7 @@ func GitCommits(dir string, limit int) ([]Comment, error) {
 }
 
 // gitFiles: отслеживаемые и неотслеживаемые файлы за вычетом игнорируемых.
-// Пути git отдаёт относительно каталога запуска. Не git или git не найден -
-// возвращаем false, и обход идёт обычным способом.
+// Не git или git не найден - false, и обход идёт обычным способом.
 func gitFiles(root string, f Filter) ([]string, bool) {
 	cmd := exec.Command("git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	buf, err := cmd.Output()

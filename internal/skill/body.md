@@ -242,20 +242,36 @@ own - often it disappears. The project's own numbers win: a repo that sets
 functions against a default is noise.
 
 If the project runs no linter at all, these are the thresholds to fall back on.
-They come from a measurement over 13 corpora, 4 languages and about 100k
-functions - Go stdlib, the Linux kernel, sqlite, coreutils and several working
-repositories:
+They come from a measurement over 30 corpora, 7 languages and about 362k
+functions: the Linux kernel, PostgreSQL, sqlite, coreutils, Go stdlib, CPython,
+tokio, ripgrep, the Eclipse platform and several working repositories.
 
-- **Nesting depth at most 4, aim for 3.** The median across every corpus is 1.
-  Human code breaks this in 0.2-0.9% of functions, so a hit is a signal rather
-  than noise. Linux CodingStyle says the same in words: "If you need more than
-  3 levels of indentation, you're screwed."
-- **Function at most 60 significant lines. At most 5 parameters.**
+- **Nesting depth at most 4, aim for 3.** This is the one number that held
+  everywhere. Median depth is 1 in every corpus measured, across C, Go, Java,
+  TypeScript, Swift, Python and Rust. Human code breaks it in 0.1-2.3% of
+  functions, so a hit is a signal rather than background. In repositories with
+  25 years of history the share does not move: eclipse.platform grew 34x, from
+  1537 functions to 51956, and went from 1.11% to 1.09%. Linux CodingStyle puts
+  it in words: "If you need more than 3 levels of indentation, you're screwed."
+- **Function at most 60 significant lines.** This is where generated code
+  actually drifts. Rust written by agents runs 45-50 lines at p95 against 29-34
+  for tokio and ripgrep, with three times as many functions over 60 lines -
+  while its nesting stays in the human range. Length is the symptom to watch,
+  depth is the one to enforce.
+- **At most 5 parameters.**
 - **Don't use cyclomatic complexity as a threshold.** The usual "under 10" is
-  broken by 5-21% of functions in code nobody would call sloppy, and the only
-  way to lower it is to split a function out - which collides with the rule
-  against helpers for single-use operations. Depth has no such conflict: it
-  drops with early return and guard clauses, that is by deleting code.
+  broken by 5-21% of functions in code nobody would call sloppy, and it drifts
+  with age on its own: over 25 years eclipse.platform doubled its share while
+  nesting stood still. Worse, the only way to lower it is to split a function
+  out - which collides with the rule against helpers for single-use operations.
+  Depth has no such conflict: it drops with early return and guard clauses,
+  that is by deleting code.
+
+In C the rule earns its keep more than anywhere else. With no exceptions, early
+exit through `goto` and error checks branching at every call, nesting climbs on
+its own: projects that write the rule down sit at 0.4-0.9% (Linux), those that
+don't at 2.8-7.3% (PostgreSQL, sqlite, coreutils) - and PostgreSQL has 59
+committers over 30 years, so review alone doesn't hold it.
 
 ## Writing the code, not just the comment
 

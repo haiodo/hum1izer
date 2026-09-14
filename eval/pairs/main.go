@@ -2,7 +2,7 @@
 // агент переписал комментарии, оригиналы лежат в родителе. До правки - "human",
 // после - "ai". Один репозиторий, одни файлы, разница в том, кто написал текст.
 //
-//	go run ./eval/pairs --repo ../foundation --commit f79c901006 --out corpus/f79c901006-comments.jsonl
+//	go run ./eval/pairs --repo ../platform --commit f79c901006 --out corpus/f79c901006-comments.jsonl
 //
 // Формат строк читает eval/lift: {lang, label, text}. lang ставится по самому
 // тексту, как в основном коде: доля кириллицы от 0.3 - ru, иначе en.
@@ -36,7 +36,7 @@ type row struct {
 }
 
 func main() {
-	repo := flag.String("repo", "../foundation", "репозиторий с коммитом")
+	repo := flag.String("repo", "../platform", "репозиторий с коммитом")
 	commit := flag.String("commit", "", "коммит с перепиской комментариев")
 	out := flag.String("out", "", "файл результата, JSONL")
 	flag.Parse()

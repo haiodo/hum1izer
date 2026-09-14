@@ -205,8 +205,12 @@ func structChecks(maxLines, maxLineLen int, c Comment) []Finding {
 	// выносить описание. Штрафовать её за длину бессмысленно.
 	isPkgDoc := strings.HasPrefix(c.Next, "package ")
 	if maxLines > 0 && prose > maxLines && !isPkgDoc {
-		add(c.Start, "Длинный комментарий",
-			fmt.Sprintf("Уложись в %d строки: оставь причину решения, описание вынеси в документацию", maxLines),
+		// Над запутанной функцией совет "напиши короче" прячет причину.
+		fix := fmt.Sprintf("Уложись в %d строки: оставь причину решения, описание вынеси в документацию", maxLines)
+		if c.Depth >= maxDepth {
+			fix = fmt.Sprintf("Функция под комментарием вложена на %d уровня: чини функцию, а не текст - с ранними возвратами описывать станет нечего", c.Depth)
+		}
+		add(c.Start, "Длинный комментарий", fix,
 			fmt.Sprintf("строк прозы: %d из %d", prose, c.Lines))
 	}
 	// Без предела длины строки правило про две строки обходится склейкой:

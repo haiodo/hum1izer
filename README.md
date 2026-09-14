@@ -255,10 +255,10 @@ The language of each block is determined from the block itself: 30% or more
 Cyrillic - the Russian rule set, otherwise English. `rules-code.yaml` is
 always applied on top of the language rule set.
 
-Block collection grew out of `platform-go/tools/longcomments` and
-`platform/scripts/find-long-comments.{go,mjs}`: from there came the Go
-parsing via `go/parser`, the character-by-character scanner for TS, and
-merging adjacent comments.
+Block collection grew out of two in-house tools, `tools/longcomments` and
+`scripts/find-long-comments.{go,mjs}`: from there came the Go parsing via
+`go/parser`, the character-by-character scanner for TS, and merging adjacent
+comments.
 
 If the argument is a git repository, the last `--commits N` commit messages
 are included too: the same prose parsing plus header-form checks.

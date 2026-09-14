@@ -242,8 +242,8 @@ string | undefined`, `// createAction(builder, {...})` - настоящий мё
 Язык каждого блока определяется по нему самому: кириллица от 30% - русский
 набор, иначе английский. Поверх языкового всегда идёт `rules-code.yaml`.
 
-Сбор блоков вырос из `platform-go/tools/longcomments` и
-`platform/scripts/find-long-comments.{go,mjs}`: оттуда взяты разбор Go через
+Сбор блоков вырос из двух внутренних инструментов, `tools/longcomments` и
+`scripts/find-long-comments.{go,mjs}`: оттуда взяты разбор Go через
 `go/parser`, посимвольный сканер для TS и склейка соседних комментариев.
 
 Если в аргументе лежит git-репозиторий, туда же попадают последние `--commits N`
