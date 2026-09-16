@@ -3,7 +3,7 @@ PKG     := .
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/haiodo/hum1izer/internal/cli.Version=$(VERSION)
 
-.PHONY: all build test fmt vet lint check install skills skill clean
+.PHONY: all build test fmt vet lint self check install skills skill clean
 
 all: check build
 
@@ -22,7 +22,12 @@ vet:
 lint:
 	golangci-lint run
 
-check: fmt vet lint test
+# Инструмент на самом себе: правило легко сломать правкой регулярки, тесты
+# этого не увидят. Ругается только на то, чего нет в снимке.
+self:
+	go run . --code --quiet .
+
+check: fmt vet lint test self
 
 # Ставит бинарь в GOBIN (по умолчанию ~/go/bin).
 install:
