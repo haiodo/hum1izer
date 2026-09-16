@@ -11,8 +11,8 @@ import (
 
 func TestMaskKeyHidesSecret(t *testing.T) {
 	cases := map[string]string{
-		"":                         "не задан",
-		"short":                    "задан",
+		"":                         "not set",
+		"short":                    "set",
 		"sk-proj-abcdefgh1234WXYZ": "...WXYZ",
 	}
 	for in, want := range cases {

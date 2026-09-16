@@ -24,11 +24,11 @@ import (
 	"github.com/haiodo/hum1izer/internal/llm"
 )
 
-const tuiUsage = `hum1izer tui - разобрать находки руками.
+const tuiUsage = `hum1izer tui - triage findings by hand.
 
-  hum1izer tui [путь]     по умолчанию текущий каталог
+  hum1izer tui [path]     default is the current directory
 
-Три панели: правила, файлы внутри правила, блоки внутри файла.
+Three panes: rules, files within a rule, blocks within a file.
 
   tab, shift+tab   next and previous pane
   arrows, j k      move in the list
@@ -49,17 +49,17 @@ const tuiUsage = `hum1izer tui - разобрать находки руками.
 Every decision is written to disk at once and the block is marked done in the
 list. There is nothing to save on exit.
 
-Флаги те же, что у прогона: --baseline, --config, --max-lines, --max-line,
+Same flags as a regular run: --baseline, --config, --max-lines, --max-line,
 --skip-tests, --only.
 
-Переписывание идёт в любой OpenAI-совместимый адрес - локальный llama.cpp или
-vllm, openrouter, сам OpenAI:
+Rewriting goes to any OpenAI-compatible endpoint - a local llama.cpp or
+vllm, openrouter, or OpenAI itself:
 
-  --llm-url    базовый адрес, по умолчанию OPENAI_BASE_URL, иначе api.openai.com
-  --llm-model  имя модели, по умолчанию OPENAI_MODEL
-  --llm-key    ключ, по умолчанию OPENAI_API_KEY; локальному серверу не нужен
+  --llm-url    base URL, default OPENAI_BASE_URL, otherwise api.openai.com
+  --llm-model  model name, default OPENAI_MODEL
+  --llm-key    key, default OPENAI_API_KEY; not needed for a local server
 
-То же самое секцией llm в .hum1izer.yaml: base_url, model, key.
+Same thing via the llm section in .hum1izer.yaml: base_url, model, key.
 `
 
 const (
@@ -972,7 +972,7 @@ func (m tuiModel) renderedLines(it code.Item, body string) int {
 // дальше решает человек.
 func (m tuiModel) retryRewrite(it code.Item, prev string, got int) tea.Cmd {
 	req := m.rewriteRequest(it)
-	req.Note = fmt.Sprintf("Прошлый ответ занял %d строк при пределе %d. Вот он:\n%s\nСократи до предела, факты сохрани.",
+	req.Note = fmt.Sprintf("Previous answer took %d lines with a limit of %d. Here it is:\n%s\nCut it to the limit, keep the facts.",
 		got, m.opts.maxLines, prev)
 	client := m.llm
 	key := mark(it)

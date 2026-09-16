@@ -13,21 +13,21 @@ import (
 	"github.com/haiodo/hum1izer/internal/humanize"
 )
 
-const initUsage = `hum1izer init - создать .hum1izer.yaml с настройками проекта.
+const initUsage = `hum1izer init - create .hum1izer.yaml with project settings.
 
-  hum1izer init [путь]     просканировать и записать настройки (по умолчанию .)
-  hum1izer init --print    показать, что получилось бы, и ничего не писать
-  hum1izer init --force    перезаписать существующий файл
+  hum1izer init [path]     scan and write settings (default .)
+  hum1izer init --print    show what would be written, write nothing
+  hum1izer init --force    overwrite an existing file
 
-Сканирование нужно, чтобы вписать в файл найденные языки и подсказать, какие
-правила шумят в этом проекте больше всего.
+Scanning fills the file with the languages found and flags which rules are
+noisiest in this project.
 `
 
 func runInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, initUsage) }
-	force := fs.Bool("force", false, "перезаписать существующий файл")
-	printOnly := fs.Bool("print", false, "вывести в stdout, ничего не записывая")
+	force := fs.Bool("force", false, "overwrite an existing file")
+	printOnly := fs.Bool("print", false, "print to stdout, write nothing")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -37,7 +37,7 @@ func runInit(args []string) int {
 	}
 	out := filepath.Join(root, config.Name)
 	if _, err := os.Stat(out); err == nil && !*printOnly && !*force {
-		fmt.Fprintf(os.Stderr, "%s уже есть, --force перезапишет\n", out)
+		fmt.Fprintf(os.Stderr, "%s already exists, --force overwrites it\n", out)
 		return 2
 	}
 
@@ -55,7 +55,7 @@ func runInit(args []string) int {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 2
 	}
-	fmt.Printf("%s записан: языков %d, файлов %d, комментариев %d, находок %d\n",
+	fmt.Printf("%s written: languages %d, files %d, comments %d, findings %d\n",
 		out, len(st.langs), st.files, st.comments, st.findings)
 	return 0
 }
@@ -109,52 +109,52 @@ func survey(root string) (stats, error) {
 
 func render(st stats) string {
 	var b strings.Builder
-	b.WriteString(`# Настройки hum1izer для этого проекта.
-# Файл ищется от проверяемого каталога вверх до корня, флаги его перекрывают.
+	b.WriteString(`# hum1izer settings for this project.
+# The file is looked up from the checked directory up to the root, flags override it.
 
 version: 1
 
 comments:
-  # Комментарий длиннее скольких строк считать находкой. 0 отключает проверку.
+  # Comment longer than this many lines counts as a finding. 0 disables the check.
   max_lines: 2
-  # Сколько последних коммитов проверять, когда сканируется git-репозиторий.
+  # How many recent commits to check when scanning a git repo.
   commits: 20
   skip_tests: false
 
 languages:
 `)
-	fmt.Fprintf(&b, "  # Найдено в проекте: %s\n", langSummary(st.langs))
-	b.WriteString(`  # only - белый список, пусто означает все поддерживаемые.
+	fmt.Fprintf(&b, "  # Found in project: %s\n", langSummary(st.langs))
+	b.WriteString(`  # only - allowlist, empty means all supported.
   only: []
   ignore: []
 
-# Пути, которые не сканировать. ** проходит через каталоги, * внутри сегмента.
-# node_modules, vendor, dist, gen и сгенерированные файлы пропускаются и так.
+# Paths to skip scanning. ** crosses directories, * stays within a segment.
+# node_modules, vendor, dist, gen and generated files are skipped by default.
 exclude: []
 
-# Снимок известных находок. Без этой строки прогон без --baseline его не читает,
-# и блоки, отложенные через fix --keep, всплывают снова.
+# Baseline of known findings. Without this line, a run without --baseline
+# won't read it, and blocks deferred via fix --keep resurface again.
 baseline: .hum1izer-baseline
 
 rules:
-  # only - белый список, пусто означает все. Имя берётся из отчёта: подходит
-  # и имя правила, и имя категории целиком.
+  # only - allowlist, empty means all. Name comes from the report: both a
+  # rule name and a whole category name work.
   only: []
   disable: []
 `)
 	if top := topRules(st.rules); len(top) > 0 {
-		b.WriteString("\n# Чаще всего в этом проекте срабатывает:\n")
+		b.WriteString("\n# Fires most often in this project:\n")
 		for _, r := range top {
 			fmt.Fprintf(&b, "#   %4d  %s\n", r.n, r.name)
 		}
-		b.WriteString("# Если что-то из этого для проекта норма, перенеси имя в rules.disable.\n")
+		b.WriteString("# If any of this is normal for the project, move the name to rules.disable.\n")
 	}
 	return b.String()
 }
 
 func langSummary(langs map[string]int) string {
 	if len(langs) == 0 {
-		return "ничего не найдено"
+		return "nothing found"
 	}
 	keys := make([]string, 0, len(langs))
 	for l := range langs {

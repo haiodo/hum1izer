@@ -38,3 +38,4 @@ clean:
 # SKILL.md в корне читают каталоги скиллов; собирается из internal/skill/body.md
 skill:
 	go run . install --repo > SKILL.md
+	rm -rf reference && cp -r internal/skill/reference reference

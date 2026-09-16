@@ -33,7 +33,7 @@ func LoadBuiltin(name string) (*RuleSet, error) {
 	case "code":
 		return parseRules(codeRules)
 	}
-	return nil, fmt.Errorf("нет встроенного набора %q", name)
+	return nil, fmt.Errorf("no built-in set %q", name)
 }
 
 // В Go RE2 нет lookaround и обратных ссылок, а \b и \w работают только по ASCII.
@@ -189,7 +189,7 @@ func LoadRules(path string) (*RuleSet, error) {
 func parseRules(raw []byte) (*RuleSet, error) {
 	var f RuleFile
 	if err := yaml.Unmarshal(raw, &f); err != nil {
-		return nil, fmt.Errorf("разбор правил: %w", err)
+		return nil, fmt.Errorf("parsing rules: %w", err)
 	}
 
 	rs := &RuleSet{
@@ -214,7 +214,7 @@ func parseRules(raw []byte) (*RuleSet, error) {
 			r, err := compile(spec, cat.Fix)
 			r.Lift = cmp.Or(r.Lift, cat.Lift)
 			if err != nil {
-				return nil, fmt.Errorf("categories[%d].rules[%d] в %q: %w", i, j, cat.Name, err)
+				return nil, fmt.Errorf("categories[%d].rules[%d] in %q: %w", i, j, cat.Name, err)
 			}
 			c.Rules = append(c.Rules, r)
 		}
@@ -240,7 +240,7 @@ func parseRules(raw []byte) (*RuleSet, error) {
 // не работает, и понять это по выводу невозможно.
 func (rs *RuleSet) validate() error {
 	if len(rs.HardBans) == 0 && len(rs.Categories) == 0 {
-		return fmt.Errorf("в наборе нет ни одного правила")
+		return fmt.Errorf("rule set has no rules")
 	}
 	known := map[string]bool{}
 	for _, b := range rs.HardBans {
@@ -252,14 +252,14 @@ func (rs *RuleSet) validate() error {
 	for genre, muted := range rs.mutedBans {
 		for name := range muted {
 			if !known[name] {
-				return fmt.Errorf("жанр %q глушит неизвестный бан %q", genre, name)
+				return fmt.Errorf("genre %q mutes unknown ban %q", genre, name)
 			}
 		}
 	}
 	for genre, muted := range rs.mutedCategories {
 		for name := range muted {
 			if !known[name] {
-				return fmt.Errorf("жанр %q глушит неизвестную категорию %q", genre, name)
+				return fmt.Errorf("genre %q mutes unknown category %q", genre, name)
 			}
 		}
 	}
@@ -272,13 +272,13 @@ func (rs *RuleSet) validate() error {
 	for genre, muted := range rs.mutedRules {
 		for name := range muted {
 			if !ruleNames[name] {
-				return fmt.Errorf("жанр %q глушит неизвестное правило %q", genre, name)
+				return fmt.Errorf("genre %q mutes unknown rule %q", genre, name)
 			}
 		}
 	}
 	for name := range rs.FreqBans {
 		if !known[name] {
-			return fmt.Errorf("freq_bans ссылается на неизвестный бан %q", name)
+			return fmt.Errorf("freq_bans references unknown ban %q", name)
 		}
 	}
 	return nil
@@ -296,7 +296,7 @@ func compile(spec RuleSpec, catFix string) (Rule, error) {
 		}
 	}
 	if set != 1 {
-		return r, fmt.Errorf("нужно ровно одно из lit / re / word_re / builtin, задано %d", set)
+		return r, fmt.Errorf("need exactly one of lit / re / word_re / builtin, got %d", set)
 	}
 
 	switch {
@@ -308,7 +308,7 @@ func compile(spec RuleSpec, catFix string) (Rule, error) {
 	case spec.Builtin != "":
 		fn, ok := builtins[spec.Builtin]
 		if !ok {
-			return r, fmt.Errorf("неизвестный builtin %q", spec.Builtin)
+			return r, fmt.Errorf("unknown builtin %q", spec.Builtin)
 		}
 		r.matcher = fn
 	default:
@@ -323,7 +323,7 @@ func compile(spec RuleSpec, catFix string) (Rule, error) {
 		r.re = re
 	}
 	if r.Name == "" {
-		return r, fmt.Errorf("у правила нет имени")
+		return r, fmt.Errorf("rule has no name")
 	}
 	return r, nil
 }

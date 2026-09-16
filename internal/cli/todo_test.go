@@ -17,7 +17,7 @@ func TestAppendTodoKeepsPreviousNotes(t *testing.T) {
 	dir := t.TempDir()
 	it := code.Item{File: filepath.Join(dir, "src", "a.ts"), Start: 42,
 		Raw:      "// старый комментарий\n// вторая строка",
-		Findings: []code.ItemFinding{{Rule: "Длинный комментарий"}, {Rule: "Пересказ кода"}}}
+		Findings: []code.ItemFinding{{Rule: "Long comment"}, {Rule: "Comment restates the code"}}}
 
 	path, err := appendTodo(dir, "", it, "  выяснить, зачем тут ретрай  ")
 	if err != nil {
@@ -39,7 +39,7 @@ func TestAppendTodoKeepsPreviousNotes(t *testing.T) {
 	for _, want := range []string{
 		"# TODO",
 		"- [ ] `src/a.ts:42` выяснить, зачем тут ретрай",
-		"- правила: Длинный комментарий, Пересказ кода",
+		"- rules: Long comment, Comment restates the code",
 		"> // старый комментарий",
 		"> // вторая строка",
 		"- [ ] `b.go:7` спросить автора",

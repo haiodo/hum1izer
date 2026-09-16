@@ -65,10 +65,27 @@ file renamed over the old one. If the sum does not match, nothing changes.
 hum1izer install --claude --codex --opencode --hermes --pi
 hum1izer install --all              # все сразу
 hum1izer install --claude --dir .   # в проект, а не в домашний каталог
+hum1izer install --claude --hooks   # plus the Claude Code hooks
 hum1izer install --print            # print SKILL.md without installing it
 hum1izer install --repo             # SKILL.md for the repository root (make skill)
 make skills                         # собрать и поставить всем
 ```
+
+`--hooks` wires the same two things for every agent that can take them: the
+rule sheet at the start of a session, and a check of the file the agent has just
+edited. Only that file is checked, never the tree, and it stays quiet when there
+is nothing.
+
+| Agent | What `--hooks` writes |
+|---|---|
+| `--claude` | `~/.claude/settings.json`, keys `hooks.SessionStart` and `hooks.PostToolUse` |
+| `--zcode` | `~/.zcode/cli/config.json`, keys `hooks.events.*` plus `hooks.enabled` |
+| `--codex` | `~/.codex/hooks.json`, the same event format |
+| `--opencode` | plugin `~/.config/opencode/plugin/hum1izer.js` |
+| `--pi` | extension `~/.pi/agent/extensions/hum1izer.ts` |
+
+Hermes and the generic `--agents` target have nothing to hook into; there
+`--hooks` says so and installs nothing.
 
 The format is shared - [Agent Skills](https://agentskills.io); only the
 header and the path differ:
@@ -76,6 +93,7 @@ header and the path differ:
 | Flag | Where |
 |---|---|
 | `--claude` | `~/.claude/skills/hum1izer/SKILL.md` |
+| `--zcode` | `~/.zcode/skills/hum1izer/SKILL.md` |
 | `--codex` | `~/.codex/skills/hum1izer/SKILL.md` |
 | `--opencode` | `~/.config/opencode/skill/hum1izer/SKILL.md` |
 | `--hermes` | `~/.hermes/skills/devops/hum1izer/SKILL.md` |
@@ -104,7 +122,7 @@ cat draft.txt | hum1izer -             # from stdin
 hum1izer --code ./src                  # comments in code
 hum1izer --code .                      # plus the last 20 commit messages
 hum1izer --code --langs go ./src       # one language only
-hum1izer --code --only "TODO без владельца" .   # one rule only
+hum1izer --code --only "TODO with no owner" .   # one rule only
 
 hum1izer tui ./src                     # work through the findings by hand
 hum1izer calibrate .                   # fit the limits to this repository
@@ -186,13 +204,13 @@ some bans are normal for the register rather than a sign of a machine:
 
 ```
 $ hum1izer --quiet ai-sample.txt
-ai-sample.txt   19/100 [рерайт] банов: 14, маркеров: 13
+ai-sample.txt                             18/100 [rewrite] bans: 6 (+0 dashes), markers: 14.0/100 words
 
 $ hum1izer --genre academic --quiet ai-sample.txt
-ai-sample.txt   35/100 [рерайт] банов: 9, маркеров: 5
+ai-sample.txt                             46/100 [rewrite] bans: 3 (+0 dashes), markers: 7.5/100 words
 ```
 
-The report text itself is currently Russian regardless of `--lang`.
+The report text itself is in English regardless of `--lang`.
 
 ## Code comments and commits
 
@@ -267,9 +285,9 @@ What is checked in addition to the prose rules:
 
 | Finding | Why |
 |---|---|
-| Restating the code | `// set user name` above `setUserName()` carries no information |
+| Comment restates the code | `// set user name` above `setUserName()` carries no information |
 | Commented-out code | code history lives in git |
-| Restating the code | the comment repeats the name next to it, including a trailing comment |
+| Comment restates the code | the comment repeats the name next to it, including a trailing comment |
 | Long comment | longer than `--max-lines` lines of prose, default 2 |
 Two lines by default is a position, not an oversight: a comment answers "why",
 and when the "why" does not fit, the explanation belongs in documentation next
@@ -277,18 +295,18 @@ to the code. Only prose counts - blank lines and tag lines (`@param`,
 `@returns`) are not counted, and package documentation (`package ...` on the
 next line) is exempt. A project with another convention sets `max_lines` in
 `.hum1izer.yaml`.
-| Banner separator | `// =========` should separate by files, not by lines |
-| TODO without an owner | without a name or a task reference it's a TODO forever |
+| Separator banner | `// =========` should separate by files, not by lines |
+| TODO with no owner | without a name or a task reference it's a TODO forever |
 | Changelog in a comment | "Updated X to Y", "Author:", a date - that's what git blame is for |
 | Markdown essay | headings and lists inside a comment |
 | Step-by-step instructions | "Step 1, Step 2" duplicates the code itself |
-| Empty-shell comment | `// constructor`, `// imports`, `// инициализация` |
-| Empty gravitas | "ensures that", "отвечает за", "под капотом" |
+| Empty comment | `// constructor`, `// imports`, `// инициализация` |
+| Empty importance | "ensures that", "отвечает за", "под капотом" |
 | Tutorial tone | "as you can see", "давайте", "теперь мы" |
 | Apology | "почему-то", "костыль", "hopefully", "not sure why" |
-| Comment-as-a-promise | "временно", "for now", "will be removed" |
+| Promise comment | "временно", "for now", "will be removed" |
 | Emoji | show up as noise in diffs and in grep |
-| Tool marker | `ponytail:`, `caveman:`, `claude:`, `AI:` - traces of a plugin or model |
+| Tool tag | `ponytail:`, `caveman:`, `claude:`, `AI:` - traces of a plugin or model |
 | Long line | merging three lines into one 140-character line is not the same as shortening it |
 
 For commits, in addition to this: a header longer than 72 characters, a
@@ -338,8 +356,8 @@ baseline: .hum1izer-baseline   # путь к снимку, считается о
 rules:
   only: []          # белый список. Пусто - все
   disable:
-    - Длинное тире            # имя правила
-    - Структура комментария   # или имя категории целиком
+    - Em dash                 # имя правила
+    - Comment shape           # или имя категории целиком
 
 genre: code         # жанр для правил прозы
 rules_file: ""      # свой rules.yaml, путь от файла настроек
@@ -348,7 +366,7 @@ rules_file: ""      # свой rules.yaml, путь от файла настро
 Names in `rules` are taken straight from the report: whatever is printed
 after `!` or `*` is what goes into `disable`. A category name works too -
 then the whole group is suppressed. The structural-check categories are
-`Структура комментария` and `Форма коммита`.
+`Comment shape` and `Commit shape`.
 
 An unknown key, an unknown language, or a broken glob breaks loading with an
 error: a setting that silently doesn't work is worse than no setting at all.
@@ -370,8 +388,8 @@ rule codes spelled out in the header:
 ```
 # hum1izer baseline v3
 #
-# 073a77 Длинная строка комментария
-# c3a286 TODO без владельца
+# 073a77 Long comment line
+# c3a286 TODO with no owner
 #
 55dc2ad977ba	c3a286	073a77
 ```
@@ -405,9 +423,10 @@ code block doesn't break the markup.
 
 ```markdown
 ## src/a.ts:5-14
-block 55dc2ad977ba | `ts` | comment | вес 7
+block 55dc2ad977ba | `ts` | comment | weight 7
 
-- **this function is responsible for** (стр. 6) - Скажи, почему так сделано
+- **this function is responsible for** (line 6)
+  - Say why it's done this way, not what the line below already does
 
 ...comment text...
 
@@ -431,7 +450,7 @@ One line of JSON per block, dirtiest first, a summary on stderr:
  "kind":"comment","score":7,
  "raw":"/**\n * This function is responsible for handling the request.\n */",
  "findings":[{"rule":"this function is responsible for","line":2,"hard":false,
-              "fix":"Скажи, почему так сделано, а не что делает строка ниже"}]}
+              "fix":"Say why it's done this way, not what the line below already does"}]}
 ```
 
 `raw` is the original text byte for byte, including `//` and `/* */`. The
@@ -463,15 +482,15 @@ What the measurement showed:
 
 | Marker | lift | |
 |---|---|---|
-| Эмодзи-декор (ru) | not present in human text at all | a perfect separator |
+| Emoji decoration (ru) | not present in human text at all | a perfect separator |
 | seamless(ly) (en) | 21.0 | |
 | crucial (en) | 17.7 | |
 | Важно понимать/помнить, что (ru) | 15.1 | |
 | not only X but also Y (en) | 12.5 | |
-| Канцелярит (ru) | 2.8 | |
+| Bureaucratese (ru) | 2.8 | |
 | Em dash (en) | 1.7 | in English there is a signal |
-| **Длинное тире (ru)** | **0.94** | more common in human text than in machine text |
-| **Латиница внутри кириллицы** | **0.28** | these are human typos, not a trace of a machine |
+| **Em dash (ru)** | **0.94** | more common in human text than in machine text |
+| **Latin inside a Cyrillic word** | **0.28** | these are human typos, not a trace of a machine |
 | **Tutorial voice (en)** | **0.79** | more common in human text |
 
 Rules with lift below 1.2 get no weight. The Russian dash stays a hard ban
@@ -601,7 +620,7 @@ printf '%s\n' '{"block":"55dc2ad977ba","text":"new text"}' \
 ```
 
 The same text in several files is one block with one id, and the report marks it
-`копий текста: N`. Without `file` the edit goes to every copy - that is what you
+`text copies: N`. Without `file` the edit goes to every copy - that is what you
 want for a stock line repeated across the tree. With `file` it goes only there.
 
 You give the prose only: the tool restores the marker, the indent and the wrap

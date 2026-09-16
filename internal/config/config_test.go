@@ -33,7 +33,7 @@ func TestFindWalksUp(t *testing.T) {
 	if c.Allow("Длинное тире", "") {
 		t.Error("отключённое правило прошло")
 	}
-	if !c.Allow("Пересказ кода", "") {
+	if !c.Allow("Comment restates the code", "") {
 		t.Error("не отключённое правило отсеяно")
 	}
 }
@@ -87,16 +87,16 @@ func TestAllowedLangs(t *testing.T) {
 
 func TestOnlyIsWhitelist(t *testing.T) {
 	var c Config
-	c.Rules.Only = []string{"Пересказ кода"}
-	if !c.Allow("Пересказ кода", "") {
+	c.Rules.Only = []string{"Comment restates the code"}
+	if !c.Allow("Comment restates the code", "") {
 		t.Error("правило из only отсеяно")
 	}
-	if c.Allow("Длинный комментарий", "Структура комментария") {
+	if c.Allow("Long comment", "Comment shape") {
 		t.Error("правило вне only прошло")
 	}
 	// Категория в only пускает все правила этой категории.
-	c.Rules.Only = []string{"Структура комментария"}
-	if !c.Allow("Длинный комментарий", "Структура комментария") {
+	c.Rules.Only = []string{"Comment shape"}
+	if !c.Allow("Long comment", "Comment shape") {
 		t.Error("категория в only не пропустила своё правило")
 	}
 }

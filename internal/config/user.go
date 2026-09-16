@@ -61,8 +61,8 @@ func SaveUser(u User) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	head := "# Настройки hum1izer для этого пользователя: адрес API, ключ и модель.\n" +
-		"# Файл не для репозитория - здесь лежит ключ.\n\n"
+	head := "# hum1izer settings for this user: API address, key and model.\n" +
+		"# Not for the repo - the key lives here.\n\n"
 	if err := os.WriteFile(path, append([]byte(head), raw...), 0o600); err != nil {
 		return "", err
 	}

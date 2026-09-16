@@ -106,13 +106,13 @@ func TestStructChecks(t *testing.T) {
 		c    Comment
 		want string
 	}{
-		{"баннер", Comment{Lines: 1, Text: "========================"}, "Баннер-разделитель"},
-		{"код", Comment{Lines: 3, Text: "if (x) {\n  doIt();\n}"}, "Закомментированный код"},
-		{"todo", Comment{Lines: 1, Text: "TODO: починить"}, "TODO без владельца"},
-		{"ченджлог", Comment{Lines: 1, Text: "Updated parser to support v2"}, "Ченджлог в комментарии"},
-		{"автор", Comment{Lines: 1, Text: "Author: кто-то"}, "Ченджлог в комментарии"},
-		{"эссе", Comment{Lines: 3, Text: "## Как это работает\n\nтекст"}, "Markdown-эссе в комментарии"},
-		{"шаги", Comment{Lines: 2, Text: "- Step 1: validate\n- Step 2: persist"}, "Пошаговая инструкция"},
+		{"баннер", Comment{Lines: 1, Text: "========================"}, "Separator banner"},
+		{"код", Comment{Lines: 3, Text: "if (x) {\n  doIt();\n}"}, "Commented-out code"},
+		{"todo", Comment{Lines: 1, Text: "TODO: починить"}, "TODO with no owner"},
+		{"ченджлог", Comment{Lines: 1, Text: "Updated parser to support v2"}, "Changelog in a comment"},
+		{"автор", Comment{Lines: 1, Text: "Author: кто-то"}, "Changelog in a comment"},
+		{"эссе", Comment{Lines: 3, Text: "## Как это работает\n\nтекст"}, "Markdown essay in a comment"},
+		{"шаги", Comment{Lines: 2, Text: "- Step 1: validate\n- Step 2: persist"}, "Step-by-step instructions"},
 	}
 	for _, c := range cases {
 		if !hasRule(structChecks(2, 0, c.c), c.want) {
@@ -120,7 +120,7 @@ func TestStructChecks(t *testing.T) {
 		}
 	}
 	// Описание операции в JSDoc - не ченджлог.
-	if hasRule(structChecks(12, 0, Comment{Lines: 1, Text: "Update a top-level document by id"}), "Ченджлог в комментарии") {
+	if hasRule(structChecks(12, 0, Comment{Lines: 1, Text: "Update a top-level document by id"}), "Changelog in a comment") {
 		t.Error("описание операции принято за ченджлог")
 	}
 	// Обычное слово "ToDo" - не маркер.
@@ -129,20 +129,20 @@ func TestStructChecks(t *testing.T) {
 		"A helper class to control classic project todo automation",
 		"The separator between the todo list and the calendar",
 	} {
-		if hasRule(structChecks(12, 0, Comment{Lines: 1, Text: text}), "TODO без владельца") {
+		if hasRule(structChecks(12, 0, Comment{Lines: 1, Text: text}), "TODO with no owner") {
 			t.Errorf("обычное слово принято за маркер: %q", text)
 		}
 	}
 	// Маркер в кавычках - цитата, а не задача.
-	if hasRule(structChecks(12, 0, Comment{Lines: 1, Text: `пример: "// TODO: fix" уходит в код`}), "TODO без владельца") {
+	if hasRule(structChecks(12, 0, Comment{Lines: 1, Text: `пример: "// TODO: fix" уходит в код`}), "TODO with no owner") {
 		t.Error("маркер в кавычках принят за задачу")
 	}
 	// Строчный маркер со знаком после - настоящий.
-	if !hasRule(structChecks(12, 0, Comment{Lines: 1, Text: "todo: починить"}), "TODO без владельца") {
+	if !hasRule(structChecks(12, 0, Comment{Lines: 1, Text: "todo: починить"}), "TODO with no owner") {
 		t.Error("строчный todo: не пойман")
 	}
 	// TODO со ссылкой на задачу - законный.
-	if hasRule(structChecks(2, 0, Comment{Lines: 1, Text: "TODO(haiodo): починить"}), "TODO без владельца") {
+	if hasRule(structChecks(2, 0, Comment{Lines: 1, Text: "TODO(haiodo): починить"}), "TODO with no owner") {
 		t.Error("TODO с владельцем не должен считаться находкой")
 	}
 }
@@ -150,10 +150,10 @@ func TestStructChecks(t *testing.T) {
 func TestCommitChecks(t *testing.T) {
 	long := strings.Repeat("длинный заголовок ", 6)
 	cases := []struct{ text, want string }{
-		{long, "Длинный заголовок коммита"},
-		{"Добавить ретраи.", "Точка в конце заголовка"},
-		{"Update", "Пустой заголовок коммита"},
-		{"Fix retry\n\nCo-Authored-By: Claude <noreply@anthropic.com>", "AI-подпись в коммите"},
+		{long, "Long commit subject"},
+		{"Добавить ретраи.", "Period at the end of the subject"},
+		{"Update", "Empty commit subject"},
+		{"Fix retry\n\nCo-Authored-By: Claude <noreply@anthropic.com>", "AI trailer in the commit"},
 		{"Add retry\n\nThis commit adds retry logic", "This commit ..."},
 	}
 	for _, c := range cases {
@@ -368,12 +368,12 @@ func TestWalkRespectsGitignore(t *testing.T) {
 func TestPackageDocNotTooLong(t *testing.T) {
 	doc := Comment{Lines: 6, Text: "Package code разбирает комментарии.\nПодробности тут.\nИ ещё строка.",
 		Next: "package code"}
-	if hasRule(structChecks(2, 0, doc), "Длинный комментарий") {
+	if hasRule(structChecks(2, 0, doc), "Long comment") {
 		t.Error("пакетная документация оштрафована за длину")
 	}
 	inline := doc
 	inline.Next = "func f() {"
-	if !hasRule(structChecks(2, 0, inline), "Длинный комментарий") {
+	if !hasRule(structChecks(2, 0, inline), "Long comment") {
 		t.Error("обычный длинный комментарий пропущен")
 	}
 }
@@ -381,10 +381,10 @@ func TestPackageDocNotTooLong(t *testing.T) {
 func TestLongCommentLine(t *testing.T) {
 	long := "// " + strings.Repeat("слово ", 30)
 	f := structChecks(2, 100, Comment{Lines: 1, Text: long})
-	if !hasRule(f, "Длинная строка комментария") {
+	if !hasRule(f, "Long comment line") {
 		t.Error("склеенная в одну длинную строку простыня не поймана")
 	}
-	if hasRule(structChecks(2, 100, Comment{Lines: 1, Text: "короткая строка"}), "Длинная строка комментария") {
+	if hasRule(structChecks(2, 100, Comment{Lines: 1, Text: "короткая строка"}), "Long comment line") {
 		t.Error("короткая строка принята за длинную")
 	}
 }
@@ -497,15 +497,15 @@ func TestDocLeadKeepsGodocConvention(t *testing.T) {
 
 func TestLengthCountsProseOnly(t *testing.T) {
 	jsdoc := Comment{Lines: 5, Text: "Sends a message.\n@param to - recipient\n@param body - text\n@returns id", Next: "function send() {"}
-	if hasRule(structChecks(2, 100, jsdoc), "Длинный комментарий") {
+	if hasRule(structChecks(2, 100, jsdoc), "Long comment") {
 		t.Error("блок из тегов JSDoc оштрафован за длину")
 	}
 	prose := Comment{Lines: 4, Text: "Первая строка.\nВторая строка.\nТретья строка.", Next: "func f() {"}
-	if !hasRule(structChecks(2, 100, prose), "Длинный комментарий") {
+	if !hasRule(structChecks(2, 100, prose), "Long comment") {
 		t.Error("три строки прозы не пойманы")
 	}
 	link := Comment{Lines: 1, Text: "См. https://example.com/" + strings.Repeat("a", 120), Next: "func f() {"}
-	if hasRule(structChecks(2, 100, link), "Длинная строка комментария") {
+	if hasRule(structChecks(2, 100, link), "Long comment line") {
 		t.Error("строка со ссылкой оштрафована за длину")
 	}
 }

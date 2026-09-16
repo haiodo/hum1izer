@@ -14,7 +14,7 @@ import (
 // todoName - файл в корне репозитория, куда уходят заметки из прогона.
 const todoName = "todo.md"
 
-const todoHead = "# TODO\n\nЗаметки из прогона hum1izer: блок, к нему вопрос и что с ним делать.\n"
+const todoHead = "# TODO\n\nNotes from a hum1izer run: the block, a question about it, and what to do.\n"
 
 // todoInput - строка ввода поверх панелей. Своя, а не из bubbles: нужен один
 // однострочный ввод, ради него зависимость не берём.
@@ -87,7 +87,7 @@ func appendTodo(root, cfgPath string, it code.Item, note string) (string, error)
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n- [ ] `%s:%d` %s\n", file, it.Start, strings.TrimSpace(note))
 	if len(rules) > 0 {
-		fmt.Fprintf(&b, "  - правила: %s\n", strings.Join(rules, ", "))
+		fmt.Fprintf(&b, "  - rules: %s\n", strings.Join(rules, ", "))
 	}
 	for _, l := range strings.Split(strings.TrimRight(it.Raw, "\n"), "\n") {
 		fmt.Fprintf(&b, "  > %s\n", strings.TrimSpace(l))

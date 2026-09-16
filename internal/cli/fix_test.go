@@ -246,7 +246,7 @@ func TestPlanKeepsCRLFWhenDeletingTrailingComment(t *testing.T) {
 }
 
 func TestPlaceholderRejectsTemplateText(t *testing.T) {
-	for _, s := range []string{"...", " ... ", "", "<новый текст>"} {
+	for _, s := range []string{"...", " ... ", "", "<new text>"} {
 		if !placeholder(s) {
 			t.Errorf("шаблон %q принят за текст", s)
 		}
@@ -461,7 +461,7 @@ func TestKeepPutsBlockIntoBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !set.Known(baseline.Entry{Hash: hash, Rule: "Закомментированный код"}) {
+	if !set.Known(baseline.Entry{Hash: hash, Rule: "Commented-out code"}) {
 		t.Errorf("блок не попал в снимок: %s", base)
 	}
 }

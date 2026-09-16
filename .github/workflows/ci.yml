@@ -22,7 +22,7 @@ jobs:
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
-            echo "не отформатировано:"; echo "$unformatted"; exit 1
+            echo "not formatted:"; echo "$unformatted"; exit 1
           fi
       - uses: golangci/golangci-lint-action@v9
         with:
@@ -30,3 +30,7 @@ jobs:
           # собранный go старее целевой версии из go.mod.
           version: v2.13.2
       - run: go test -race ./...
+      # Инструмент проверяет сам себя: правило легко сломать правкой регулярки,
+      # и тесты этого не увидят. Ругается только на то, чего нет в снимке.
+      - name: hum1izer on itself
+        run: go run . --code --quiet .

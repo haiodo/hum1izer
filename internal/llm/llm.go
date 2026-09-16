@@ -47,7 +47,7 @@ func New(c Config) (*Client, error) {
 		}
 	}
 	if key == "" {
-		return nil, errors.New("ключ не задан: OPENAI_API_KEY, --llm-key или llm.key в .hum1izer.yaml")
+		return nil, errors.New("key not set: OPENAI_API_KEY, --llm-key or llm.key in .hum1izer.yaml")
 	}
 	opts = append(opts, option.WithAPIKey(key))
 	return &Client{api: openai.NewClient(opts...), model: c.Model}, nil
@@ -71,7 +71,7 @@ func (c *Client) Models(ctx context.Context) ([]string, error) {
 	}
 	sort.Strings(out)
 	if len(out) == 0 {
-		return nil, errors.New("эндпоинт не вернул ни одной модели")
+		return nil, errors.New("endpoint returned no models")
 	}
 	return out, nil
 }
@@ -110,7 +110,7 @@ type Usage struct {
 
 func (c *Client) Rewrite(ctx context.Context, r Request) (string, Usage, error) {
 	if c.model == "" {
-		return "", Usage{}, errors.New("модель не выбрана: hum1izer llm")
+		return "", Usage{}, errors.New("model not selected: hum1izer llm")
 	}
 	lang := "русский"
 	if r.Lang != "ru" {
@@ -155,7 +155,7 @@ func (c *Client) Rewrite(ctx context.Context, r Request) (string, Usage, error) 
 	}
 	u := Usage{In: resp.Usage.PromptTokens, Out: resp.Usage.CompletionTokens}
 	if len(resp.Choices) == 0 {
-		return "", u, errors.New("модель вернула пустой ответ")
+		return "", u, errors.New("model returned an empty response")
 	}
 	return clean(resp.Choices[0].Message.Content), u, nil
 }

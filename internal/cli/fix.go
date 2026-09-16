@@ -17,48 +17,49 @@ import (
 	"github.com/haiodo/hum1izer/internal/humanize"
 )
 
-const fixUsage = `hum1izer fix - применить правку к блоку комментария по хэшу из отчёта.
+const fixUsage = `hum1izer fix - apply an edit to a comment block by the hash from the report.
 
-  hum1izer fix --block <хэш> --delete путь        удалить блок целиком
-  hum1izer fix --block <хэш> --text "<текст>" путь  заменить текст блока
-  hum1izer fix --block <хэш> --text - путь        то же, текст со stdin
-  hum1izer fix --block <хэш> --keep путь           не править: внести в снимок
-  hum1izer fix --auto путь                        удалить механическое
-  hum1izer fix --batch - путь                     пачкой: JSONL со stdin
+  hum1izer fix --block <hash> --delete path         remove the whole block
+  hum1izer fix --block <hash> --text "<text>" path  replace the block's text
+  hum1izer fix --block <hash> --text - path         same, text from stdin
+  hum1izer fix --block <hash> --keep path           don't edit: add to baseline
+  hum1izer fix --auto path                          remove mechanical findings
+  hum1izer fix --batch - path                       batch: JSONL from stdin
 
-  --write     применить; без него печатается только предпросмотр
-  --max-line  переносить длинные строки при замене (100)
+  --write     apply; without it only a preview prints
+  --max-line  wrap long lines on replace (100)
 
-Пачка - по строке JSON на правку, дерево обходится один раз:
+Batch - one JSON line per edit, the tree is walked once:
 
-  {"block":"55dc2ad977ba","text":"новый текст комментария"}
+  {"block":"55dc2ad977ba","text":"new comment text"}
   {"block":"a832aeaac8cf","delete":true}
   {"block":"56fa9eb0ddfa","file":"src/a.ts","delete":true}
 
-Одинаковый текст в разных файлах - один блок с одним хэшем. Без file правка
-уходит во все его копии, с file - только в указанный.
+Identical text in different files is one block with one hash. Without file
+the edit hits every copy, with file - only the one named.
 
-Посмотрел и решил не трогать - {"block":"...","keep":true}: блок уходит в снимок
-(--baseline или baseline из .hum1izer.yaml) и в следующем прогоне не всплывает.
-Оставить пометку прямо в коде - hum1izer:keep в тексте комментария.
+Looked and decided to leave it - {"block":"...","keep":true}: the block goes
+into the baseline (--baseline or baseline from .hum1izer.yaml) and won't show
+up on the next run. To mark it right in the code, put hum1izer:keep in the
+comment text.
 
-Блок ищется по хэшу, а не по номеру строки: после первой же правки строки
-съезжают, хэш нет. Текст задаётся без // и /* */ - маркеры, отступ и перенос
-инструмент восстановит сам.
+A block is found by hash, not by line number: after the first edit lines
+shift, the hash doesn't. Text is given without // and /* */ - the tool
+restores the marker, indent and wrapping itself.
 `
 
 func runFix(args []string) int {
 	fs := flag.NewFlagSet("fix", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, fixUsage) }
-	block := fs.String("block", "", "хэш блока из отчёта")
-	del := fs.Bool("delete", false, "удалить блок целиком")
-	text := fs.String("text", "", "новый текст комментария, - читает stdin")
-	auto := fs.Bool("auto", false, "удалить механическое: закомментированный код и комментарии-пустышки")
-	batch := fs.String("batch", "", "файл JSONL с правками, - читает stdin")
-	keep := fs.Bool("keep", false, "не править: внести блок в снимок как принятый")
-	basePath := fs.String("baseline", "", "файл снимка для --keep (по умолчанию из .hum1izer.yaml)")
-	write := fs.Bool("write", false, "применить правку")
-	maxLine := fs.Int("max-line", 100, "переносить длинные строки при замене")
+	block := fs.String("block", "", "block hash from the report")
+	del := fs.Bool("delete", false, "remove the whole block")
+	text := fs.String("text", "", "new comment text, - reads stdin")
+	auto := fs.Bool("auto", false, "remove mechanical findings: commented-out code and placeholder comments")
+	batch := fs.String("batch", "", "JSONL file with edits, - reads stdin")
+	keep := fs.Bool("keep", false, "don't edit: add the block to the baseline as accepted")
+	basePath := fs.String("baseline", "", "baseline file for --keep (default from .hum1izer.yaml)")
+	write := fs.Bool("write", false, "apply the edit")
+	maxLine := fs.Int("max-line", 100, "wrap long lines on replace")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -83,10 +84,10 @@ func runFix(args []string) int {
 		}
 		return keepBlocks(root, *basePath, blocks, *write)
 	case *del && *text != "":
-		fmt.Fprintln(os.Stderr, "--delete и --text вместе не имеют смысла")
+		fmt.Fprintln(os.Stderr, "--delete and --text together make no sense")
 		return 2
 	case !*del && *text == "":
-		fmt.Fprintln(os.Stderr, "нужен --delete или --text")
+		fmt.Fprintln(os.Stderr, "need --delete or --text")
 		return 2
 	}
 
@@ -101,7 +102,7 @@ func runFix(args []string) int {
 	}
 
 	if !*del && placeholder(body) {
-		fmt.Fprintln(os.Stderr, "--text: это шаблон из отчёта, подставь настоящий текст")
+		fmt.Fprintln(os.Stderr, "--text: this is the report's template, fill in the real text")
 		return 2
 	}
 
@@ -184,11 +185,11 @@ func fixBatch(root, src, basePath string, write bool, maxLine int) int {
 		}
 		var b batchEdit
 		if err := json.Unmarshal([]byte(t), &b); err != nil {
-			fmt.Fprintf(os.Stderr, "строка %d: %v\n", line, err)
+			fmt.Fprintf(os.Stderr, "line %d: %v\n", line, err)
 			return 2
 		}
 		if b.id() == "" {
-			fmt.Fprintf(os.Stderr, "строка %d: нет поля block или hash\n", line)
+			fmt.Fprintf(os.Stderr, "line %d: missing block or hash field\n", line)
 			return 2
 		}
 		if b.Text == "" && !b.Delete && !b.Keep {
@@ -196,7 +197,7 @@ func fixBatch(root, src, basePath string, write bool, maxLine int) int {
 			continue
 		}
 		if !b.Delete && !b.Keep && placeholder(b.Text) {
-			fmt.Fprintf(os.Stderr, "строка %d: в text шаблон, а не текст\n", line)
+			fmt.Fprintf(os.Stderr, "line %d: text is a template, not real text\n", line)
 			return 2
 		}
 		want[b.key()] = b
@@ -247,12 +248,12 @@ func fixBatch(root, src, basePath string, write bool, maxLine int) int {
 		}
 	}
 	if skipped > 0 {
-		fmt.Fprintf(os.Stderr, "пропущено без правки: %d\n", skipped)
+		fmt.Fprintf(os.Stderr, "skipped without edit: %d\n", skipped)
 	}
 	exit := 0
 	for k, b := range want {
 		if !found[k] {
-			fmt.Fprintf(os.Stderr, "блок %s не найден\n", b.id())
+			fmt.Fprintf(os.Stderr, "block %s not found\n", b.id())
 			exit = 2
 		}
 	}
@@ -281,11 +282,11 @@ type edit struct {
 func walkFilter(root string) (code.Filter, error) {
 	cfg, err := config.Find(root)
 	if err != nil {
-		return code.Filter{}, fmt.Errorf("настройки: %w", err)
+		return code.Filter{}, fmt.Errorf("settings: %w", err)
 	}
 	excludes, err := cfg.Excludes()
 	if err != nil {
-		return code.Filter{}, fmt.Errorf("исключения: %w", err)
+		return code.Filter{}, fmt.Errorf("excludes: %w", err)
 	}
 	skipTests := cfg.Comments.SkipTests != nil && *cfg.Comments.SkipTests
 	return code.Filter{Langs: cfg.AllowedLangs(), Exclude: excludes, SkipTests: skipTests}, nil
@@ -321,14 +322,14 @@ func locateAll(root, hash string) ([]code.Comment, error) {
 		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("блок %s не найден в %s: текст изменился или путь не тот", hash, root)
+		return nil, fmt.Errorf("block %s not found in %s: text changed or wrong path", hash, root)
 	}
 	return out, nil
 }
 
 func plan(c code.Comment, src string, del bool, body string, maxLine int) (edit, error) {
 	if c.SO < 0 || c.EO > len(src) || c.SO >= c.EO {
-		return edit{}, fmt.Errorf("%s: блок вне файла, смещения %d-%d", c.File, c.SO, c.EO)
+		return edit{}, fmt.Errorf("%s: block outside file, offsets %d-%d", c.File, c.SO, c.EO)
 	}
 
 	// Сканер не для Go забирает в блок и \r: он часть перевода строки, а не текста
@@ -349,7 +350,7 @@ func plan(c code.Comment, src string, del bool, body string, maxLine int) (edit,
 
 	if !del {
 		if !ownLine {
-			return edit{}, fmt.Errorf("замена хвостового комментария не поддерживается, правь его вручную")
+			return edit{}, fmt.Errorf("replacing a trailing comment is not supported, edit it by hand")
 		}
 		e.so, e.eo = lineStart, eo
 		head := strings.SplitN(c.Raw, "\n", 2)[0]
@@ -381,7 +382,7 @@ func plan(c code.Comment, src string, del bool, body string, maxLine int) (edit,
 // модель копирует команду целиком и превращает комментарий в "...".
 func placeholder(s string) bool {
 	t := strings.TrimSpace(s)
-	return t == "" || strings.Trim(t, ".") == "" || t == "<новый текст>"
+	return t == "" || strings.Trim(t, ".") == "" || t == "<new text>"
 }
 
 func crlf(src string) bool { return strings.Contains(src, "\r\n") }
@@ -500,11 +501,11 @@ func keepBlocks(root, basePath string, cmts []code.Comment, write bool) int {
 		}
 	}
 	if path == "" {
-		fmt.Fprintln(os.Stderr, "--keep: укажи --baseline <файл> или baseline в .hum1izer.yaml")
+		fmt.Fprintln(os.Stderr, "--keep: give --baseline <file> or baseline in .hum1izer.yaml")
 		return 2
 	}
 	if cfg.Baseline == "" {
-		fmt.Fprintf(os.Stderr, "снимок %s прогон без --baseline не читает: добавь baseline в .hum1izer.yaml\n", path)
+		fmt.Fprintf(os.Stderr, "baseline %s: a run without --baseline won't read it, add baseline to .hum1izer.yaml\n", path)
 	}
 	set, err := baseline.Load(path)
 	if err != nil {
@@ -522,7 +523,7 @@ func keepBlocks(root, basePath string, cmts []code.Comment, write bool) int {
 		hash := baseline.Hash(c.Text)
 		rules := code.CheckComment(cs, c, "code")
 		if len(rules) == 0 {
-			fmt.Printf("= %s %s: находок нет, в снимок нечего класть\n", hash, c.File)
+			fmt.Printf("= %s %s: no findings, nothing to add to the baseline\n", hash, c.File)
 			continue
 		}
 		n := 0
@@ -535,14 +536,14 @@ func keepBlocks(root, basePath string, cmts []code.Comment, write bool) int {
 		fmt.Printf("keep %s %s (+%d)\n", hash, c.File, n)
 	}
 	if !write {
-		fmt.Printf("\nпредпросмотр: --write запишет %d строк в %s\n", added, path)
+		fmt.Printf("\npreview: --write will write %d lines to %s\n", added, path)
 		return 0
 	}
 	if err := set.Save(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	fmt.Printf("снимок %s: +%d\n", path, added)
+	fmt.Printf("baseline %s: +%d\n", path, added)
 	return 0
 }
 
@@ -601,7 +602,7 @@ func apply(edits []edit, write bool) int {
 		byFile[e.file] = append(byFile[e.file], e)
 	}
 	if len(edits) == 0 {
-		fmt.Println("нечего править")
+		fmt.Println("nothing to edit")
 		return 0
 	}
 	for file, es := range byFile {
@@ -627,7 +628,7 @@ func apply(edits []edit, write bool) int {
 		}
 	}
 	if !write {
-		fmt.Println("\nпредпросмотр: --write применит")
+		fmt.Println("\npreview: --write will apply")
 	}
 	return 0
 }
@@ -643,7 +644,7 @@ func writeEdits(file string, es []edit) error {
 	sortEditsDesc(es)
 	for _, e := range es {
 		if e.so < 0 || e.eo > len(src) || e.so > e.eo {
-			return fmt.Errorf("%s: диапазон %d-%d вне файла", file, e.so, e.eo)
+			return fmt.Errorf("%s: range %d-%d outside file", file, e.so, e.eo)
 		}
 		src = src[:e.so] + e.new + src[e.eo:]
 	}

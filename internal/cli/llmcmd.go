@@ -14,27 +14,27 @@ import (
 	"github.com/haiodo/hum1izer/internal/llm"
 )
 
-const llmUsage = `hum1izer llm - адрес, ключ и модель для переписывания комментариев.
+const llmUsage = `hum1izer llm - endpoint, key and model for rewriting comments.
 
-  hum1izer llm                     показать, что настроено
-  hum1izer llm --key <ключ>        сохранить ключ и выбрать модель из списка
-  hum1izer llm --url <адрес>       то же для своего OpenAI-совместимого сервера
-  hum1izer llm --list              только показать список моделей
-  hum1izer llm --model <имя>       записать модель без выбора из списка
+  hum1izer llm                     show current settings
+  hum1izer llm --key <key>         save the key and pick a model from the list
+  hum1izer llm --url <url>         same, for your own OpenAI-compatible server
+  hum1izer llm --list              just show the list of models
+  hum1izer llm --model <name>      set the model without picking from a list
 
-Настройки лежат в файле пользователя, не в репозитории: ключу там не место.
-Путь - $XDG_CONFIG_HOME/hum1izer/config.yaml, иначе ~/.config/hum1izer/config.yaml,
-права 0600. Проектный .hum1izer.yaml и флаги их перекрывают.
+Settings live in the user file, not in the repo: a key has no place there.
+Path is $XDG_CONFIG_HOME/hum1izer/config.yaml, otherwise ~/.config/hum1izer/config.yaml,
+mode 0600. The project .hum1izer.yaml and flags override them.
 `
 
 func runLLMCmd(args []string) int {
 	fs := flag.NewFlagSet("llm", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, llmUsage) }
-	url := fs.String("url", "", "базовый адрес OpenAI-совместимого API")
-	key := fs.String("key", "", "ключ API")
-	model := fs.String("model", "", "имя модели, без выбора из списка")
-	list := fs.Bool("list", false, "показать список моделей и выйти")
-	clear := fs.Bool("forget", false, "стереть сохранённые адрес, ключ и модель")
+	url := fs.String("url", "", "base URL of an OpenAI-compatible API")
+	key := fs.String("key", "", "API key")
+	model := fs.String("model", "", "model name, without picking from a list")
+	list := fs.Bool("list", false, "show the list of models and exit")
+	clear := fs.Bool("forget", false, "erase saved endpoint, key and model")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -51,7 +51,7 @@ func runLLMCmd(args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 2
 		}
-		fmt.Println("стёрто:", path)
+		fmt.Println("erased:", path)
 		return 0
 	}
 
@@ -69,12 +69,12 @@ func runLLMCmd(args []string) int {
 	// Ничего не просили - показываем состояние и выходим.
 	if !changed && !*list {
 		path, _ := config.UserPath()
-		fmt.Println("файл:  ", path)
-		fmt.Println("адрес: ", cmp.Or(u.LLM.BaseURL, "api.openai.com (по умолчанию)"))
-		fmt.Println("ключ:  ", maskKey(u.LLM.Key))
-		fmt.Println("модель:", cmp.Or(u.LLM.Model, "не выбрана"))
+		fmt.Println("file:  ", path)
+		fmt.Println("url:   ", cmp.Or(u.LLM.BaseURL, "api.openai.com (default)"))
+		fmt.Println("key:   ", maskKey(u.LLM.Key))
+		fmt.Println("model: ", cmp.Or(u.LLM.Model, "not selected"))
 		if u.LLM.Model == "" {
-			fmt.Println("\nвыбрать: hum1izer llm --key <ключ>")
+			fmt.Println("\npick one: hum1izer llm --key <key>")
 		}
 		return 0
 	}
@@ -87,10 +87,10 @@ func runLLMCmd(args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 2
 		}
-		fmt.Println("записано:", path)
+		fmt.Println("saved:", path)
 	}
 	if *model != "" {
-		fmt.Println("модель:", u.LLM.Model)
+		fmt.Println("model:", u.LLM.Model)
 		return 0
 	}
 
@@ -102,7 +102,7 @@ func runLLMCmd(args []string) int {
 
 	models, err := client.Models(context.Background())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "список моделей:", err)
+		fmt.Fprintln(os.Stderr, "model list:", err)
 		return 2
 	}
 	if *list {
@@ -118,7 +118,7 @@ func runLLMCmd(args []string) int {
 		return 2
 	}
 	if picked == "" {
-		fmt.Println("не выбрано, ничего не записано")
+		fmt.Println("nothing selected, nothing written")
 		return 0
 	}
 	u.LLM.Model = picked
@@ -127,7 +127,7 @@ func runLLMCmd(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	fmt.Printf("модель %s записана в %s\n", picked, path)
+	fmt.Printf("model %s written to %s\n", picked, path)
 	return 0
 }
 
@@ -136,9 +136,9 @@ func runLLMCmd(args []string) int {
 func maskKey(k string) string {
 	switch {
 	case k == "":
-		return "не задан"
+		return "not set"
 	case len(k) <= 8:
-		return "задан"
+		return "set"
 	default:
 		return "..." + k[len(k)-4:]
 	}

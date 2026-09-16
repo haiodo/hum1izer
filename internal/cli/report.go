@@ -27,7 +27,7 @@ func countHits(hits []humanize.Hit) int {
 // поэтому "банов: 72" рядом с "87/100 чисто" читалось как противоречие.
 func splitBans(hits []humanize.Hit) (phrases, dashes int) {
 	for _, h := range hits {
-		if strings.Contains(h.Marker, "тире") {
+		if strings.Contains(h.Marker, "dash") {
 			dashes += h.Count
 			continue
 		}
@@ -51,18 +51,18 @@ func printReport(rs *humanize.RuleSet, src string, rep humanize.Report, top int)
 	t := rs.Thresholds
 	fmt.Printf("=== hum1izer: %s ===\n", src)
 	if rep.Genre != "marketing" {
-		fmt.Printf("жанр: %s (снято по жанру: %d банов, %d мягких)\n",
+		fmt.Printf("genre: %s (muted by genre: %d bans, %d soft)\n",
 			rep.Genre, rep.MutedBans, rep.MutedSoft)
 	}
 	if rep.NotRussian {
-		fmt.Println("⚠ текст не похож на русский: метрики рассчитаны на русский, отчёт не показателен")
+		fmt.Println("⚠ text doesn't look like Russian: metrics are tuned for Russian, the report isn't meaningful")
 	}
 	fmt.Println()
 
-	fmt.Printf("ЧИСТОТА: %d/100  [%s]\n", rep.Score.Value, rep.Score.Band)
-	fmt.Println("  (≥85 чисто · 60-84 точечная правка · <60 рерайт)")
+	fmt.Printf("CLEANLINESS: %d/100  [%s]\n", rep.Score.Value, rep.Score.Band)
+	fmt.Println("  (≥85 clean · 60-84 spot fix · <60 rewrite)")
 	if len(rep.Score.Penalties) == 0 {
-		fmt.Println("  без штрафов")
+		fmt.Println("  no penalties")
 	}
 	for _, p := range rep.Score.Penalties {
 		fmt.Printf("  %+d  %s\n", p.Points, p.Reason)
@@ -72,9 +72,9 @@ func printReport(rs *humanize.RuleSet, src string, rep humanize.Report, top int)
 	}
 	fmt.Println()
 
-	fmt.Println("ХАРД-БАНЫ:")
+	fmt.Println("HARD BANS:")
 	if len(rep.HardBans) == 0 {
-		fmt.Println("  ✓ чисто")
+		fmt.Println("  ✓ clean")
 	}
 	for _, h := range rep.HardBans {
 		fmt.Printf("  ⛔ %s ×%d (%s)\n", h.Marker, h.Count, lineList(h.Lines))
@@ -82,7 +82,7 @@ func printReport(rs *humanize.RuleSet, src string, rep humanize.Report, top int)
 	}
 	fmt.Println()
 
-	fmt.Printf("МАРКЕРЫ: %s\n", humanize.MarkerVerdict(rs, rep.Markers, rep.Rhythm.Words))
+	fmt.Printf("MARKERS: %s\n", humanize.MarkerVerdict(rs, rep.Markers, rep.Rhythm.Words))
 	sorted := slices.Clone(rep.Markers)
 	slices.SortStableFunc(sorted, func(a, b humanize.Hit) int { return b.Count - a.Count })
 	shown := sorted
@@ -90,14 +90,14 @@ func printReport(rs *humanize.RuleSet, src string, rep humanize.Report, top int)
 		shown = sorted[:top]
 	}
 	for _, h := range shown {
-		fmt.Printf("  • [%s] «%s» ×%d (%s)\n", h.Category, h.Marker, h.Count, lineList(h.Lines))
+		fmt.Printf("  • [%s] \"%s\" ×%d (%s)\n", h.Category, h.Marker, h.Count, lineList(h.Lines))
 	}
 	if len(sorted) > len(shown) {
-		fmt.Printf("  … и ещё %d\n", len(sorted)-len(shown))
+		fmt.Printf("  ... and %d more\n", len(sorted)-len(shown))
 	}
 	// Рекомендации по категориям: одна строка на категорию, а не на каждое попадание.
 	if fixes := categoryFixes(sorted); len(fixes) > 0 {
-		fmt.Println("\n  Что делать:")
+		fmt.Println("\n  What to do:")
 		for _, f := range fixes {
 			fmt.Printf("  → [%s] %s\n", f[0], f[1])
 		}
@@ -105,59 +105,59 @@ func printReport(rs *humanize.RuleSet, src string, rep humanize.Report, top int)
 	fmt.Println()
 
 	r := rep.Rhythm
-	fmt.Println("РИТМ И ТИПОГРАФИКА:")
+	fmt.Println("RHYTHM AND TYPOGRAPHY:")
 	target := rs.CVTarget(rep.Genre)
 	if r.CVLen < target && r.Sentences >= 4 {
-		fmt.Printf("  ⚠ ровный ритм (CV=%.3f, цель ≥%.2f для жанра %s): чередуй длину предложений\n",
+		fmt.Printf("  ⚠ flat rhythm (CV=%.3f, target ≥%.2f for genre %s): vary sentence length\n",
 			r.CVLen, target, rep.Genre)
 	} else {
-		fmt.Printf("  ✓ ритм рваный (CV=%.3f)\n", r.CVLen)
+		fmt.Printf("  ✓ rhythm varies (CV=%.3f)\n", r.CVLen)
 	}
-	fmt.Printf("  предложений: %d, средняя длина: %.1f (min %d / max %d)\n",
+	fmt.Printf("  sentences: %d, average length: %.1f (min %d / max %d)\n",
 		r.Sentences, r.MeanLen, r.MinLen, r.MaxLen)
-	fmt.Printf("  слов: %d, тире: %d, многоточий: %d, скобок: %d, вопросов: %d\n",
+	fmt.Printf("  words: %d, dashes: %d, ellipses: %d, parens: %d, questions: %d\n",
 		r.Words, r.EmDash, r.Ellipsis, r.Parentheses, r.Questions)
-	fmt.Printf("  средняя длина слова: %.2f, слов от 10 букв: %.1f%%\n",
+	fmt.Printf("  average word length: %.2f, words 10+ letters: %.1f%%\n",
 		r.MeanWordLen, r.LongWords)
 	fmt.Println()
 
-	fmt.Println("НОМИНАЛЬНОСТЬ:")
+	fmt.Println("NOMINALIZATION:")
 	if rep.Morph.Per100 > t.NominalTarget {
-		fmt.Printf("  ⚠ отглагольных существительных %.1f на 100 слов (цель ≤%.1f)\n",
+		fmt.Printf("  ⚠ deverbal nouns: %.1f per 100 words (target ≤%.1f)\n",
 			rep.Morph.Per100, t.NominalTarget)
-		fmt.Println("     → разверни в глаголы: «осуществить внедрение» → «внедрить»")
+		fmt.Println("     → expand into a verb: \"carry out the implementation\" → \"implement\"")
 	} else {
-		fmt.Printf("  ✓ отглагольных существительных %.1f на 100 слов\n", rep.Morph.Per100)
+		fmt.Printf("  ✓ deverbal nouns: %.1f per 100 words\n", rep.Morph.Per100)
 	}
 	fmt.Println()
 
 	st := rep.Structure
-	fmt.Println("СТРУКТУРА:")
-	fmt.Printf("  абзацев: %d, CV длин: %.3f, пунктов списка: %d\n",
+	fmt.Println("STRUCTURE:")
+	fmt.Printf("  paragraphs: %d, length CV: %.3f, list items: %d\n",
 		st.Paragraphs, st.ParaCV, st.ListItems)
 	if st.Paragraphs >= t.ParaMinCount && st.ParaCV < t.ParaCVAI {
-		fmt.Println("  ⚠ абзацы одной длины → пусть длина идёт от мысли, а не от шаблона")
+		fmt.Println("  ⚠ paragraphs are all the same length → let length follow the thought, not a template")
 	}
 	if st.ListItems >= t.ListicleMinItems && st.ListicleShare > t.ListicleShareAI {
-		fmt.Printf("  ⚠ листикл (%d%% строк — пункты) → часть пунктов разверни в прозу\n",
+		fmt.Printf("  ⚠ listicle (%d%% of lines are items) → expand some items into prose\n",
 			int(st.ListicleShare*100))
 	}
 	if st.TitleCaseHeads > 0 {
-		fmt.Printf("  ⚠ Title Case в заголовках: %d → в русском с заглавной только первое слово\n",
+		fmt.Printf("  ⚠ Title Case in headings: %d → in Russian only the first word is capitalized\n",
 			st.TitleCaseHeads)
 	}
 	if st.TruncatedEnding {
-		fmt.Println("  ⚠ текст оборван на полуслове → допиши финал")
+		fmt.Println("  ⚠ text is cut off mid-word → finish the ending")
 	}
 	if len(st.Repeats) > 0 {
-		fmt.Printf("  ⚠ повторов трёхсловий: %d (%.1f на 1000 слов) → переформулируй\n",
+		fmt.Printf("  ⚠ repeated 3-word phrases: %d (%.1f per 1000 words) → rephrase\n",
 			len(st.Repeats), st.RepeatPer1000)
 		for i, r := range st.Repeats {
 			if i >= 5 {
-				fmt.Printf("     … и ещё %d\n", len(st.Repeats)-i)
+				fmt.Printf("     ... and %d more\n", len(st.Repeats)-i)
 				break
 			}
-			fmt.Printf("     «%s» ×%d\n", r.Phrase, r.Count)
+			fmt.Printf("     \"%s\" ×%d\n", r.Phrase, r.Count)
 		}
 	}
 	fmt.Println()
@@ -188,7 +188,7 @@ func lineList(lines []int) string {
 	for i, n := range shown {
 		parts[i] = strconv.Itoa(n)
 	}
-	return "стр. " + strings.Join(parts, ", ") + suffix
+	return "line " + strings.Join(parts, ", ") + suffix
 }
 
 // --- код ------------------------------------------------------------------
@@ -234,17 +234,17 @@ func printMarkdown(items []code.Item, limit, files, blocks int) {
 	}
 	for _, it := range shown {
 		fmt.Printf("## %s\n", it.ID)
-		fmt.Printf("block %s | `%s` | %s | вес %d", it.Hash, it.Lang, it.Kind, it.Score)
+		fmt.Printf("block %s | `%s` | %s | weight %d", it.Hash, it.Lang, it.Kind, it.Score)
 		if copies[it.Hash] > 1 {
-			fmt.Printf(" | копий текста: %d", copies[it.Hash])
+			fmt.Printf(" | text copies: %d", copies[it.Hash])
 		}
 		fmt.Print("\n\n")
 		for _, g := range groupFindings(it.Findings) {
 			mark := ""
 			if g.hard {
-				mark = "жёсткое, "
+				mark = "hard, "
 			}
-			fmt.Printf("- **%s** (%sстр. %s)", g.rule, mark, joinInts(g.lines))
+			fmt.Printf("- **%s** (%sline %s)", g.rule, mark, joinInts(g.lines))
 			if g.fix != "" {
 				fmt.Printf(" - %s", g.fix)
 			}
@@ -260,21 +260,21 @@ func printMarkdown(items []code.Item, limit, files, blocks int) {
 		len(items), len(shown), countFindings(items), blocks, files)
 }
 
-const mdHowTo = "Как править: команда есть под каждым блоком, id блока стоит после слова `block`.\n" +
-	"Текст даётся без `//` и `/* */` - маркер, отступ и перенос инструмент\n" +
-	"восстановит сам. Без `--write` печатается дифф, файл не меняется. Строки после\n" +
-	"первой правки съезжают, id блока - нет. Один и тот же текст в разных файлах -\n" +
-	"один блок с одним id; команда ниже правит только свой файл.\n" +
-	"Посмотрел и решил оставить: `hum1izer fix --block <id> --keep --write <путь>`\n" +
-	"вносит блок в снимок, и он больше не всплывает. Навсегда и прямо в коде -\n" +
-	"слово `hum1izer:keep` в тексте комментария.\n\n"
+const mdHowTo = "How to fix: the command is under each block, the block id follows the word `block`.\n" +
+	"Text is given without `//` and `/* */` - the tool restores the marker, indent\n" +
+	"and wrapping itself. Without `--write` a diff prints, the file doesn't change. Lines\n" +
+	"shift after the first edit, the block id doesn't. The same text in different files is\n" +
+	"one block with one id; the command below edits only its own file.\n" +
+	"Looked and decided to leave it: `hum1izer fix --block <id> --keep --write <path>`\n" +
+	"adds the block to the baseline, and it won't show up again. Permanently and right\n" +
+	"in the code - the word `hum1izer:keep` in the comment text.\n\n"
 
 // deleteOnly - правила, где решать нечего: такой блок удаляется целиком.
 // Значение true - удаляется и без модели, это и делает fix --auto.
 var deleteOnly = map[string]bool{
-	"Закомментированный код": true,
-	"Комментарий-пустышка":   true,
-	"Баннер-разделитель":     false,
+	"Commented-out code": true,
+	"Empty comment":      true,
+	"Separator banner":   false,
 }
 
 func deletable(rule, category string) bool {
@@ -295,7 +295,7 @@ func fixCommand(it code.Item) string {
 	if del {
 		return fmt.Sprintf("```bash\nhum1izer fix --block %s --delete --write %q\n```", it.Hash, it.File)
 	}
-	return fmt.Sprintf("```bash\nhum1izer fix --block %s --text \"<новый текст>\" --write %q\n```", it.Hash, it.File)
+	return fmt.Sprintf("```bash\nhum1izer fix --block %s --text \"<new text>\" --write %q\n```", it.Hash, it.File)
 }
 
 // groupFindings схлопывает одно правило в одну строку со списком строк:
@@ -406,10 +406,10 @@ func printCodeReport(items []code.Item, files, blocks, limit, top int, detail bo
 		}
 	}
 
-	fmt.Printf("\n--- итого: %d находок (%d жёстких) в %d блоках, %d комментариях, %d файлов\n",
+	fmt.Printf("\n--- total: %d findings (%d hard) in %d blocks, %d comments, %d files\n",
 		countFindings(items), hard, len(items), blocks, files)
 	if detail && len(shown) < len(items) {
-		fmt.Printf("--- показано блоков: %d из %d (--limit)\n", len(shown), len(items))
+		fmt.Printf("--- shown blocks: %d of %d (--limit)\n", len(shown), len(items))
 	}
 	if len(byRule) == 0 {
 		return
@@ -431,12 +431,12 @@ func printCodeReport(items []code.Item, files, blocks, limit, top int, detail bo
 	if detail && top > 0 && len(list) > top {
 		list = list[:top]
 	}
-	fmt.Println("--- по правилам:")
+	fmt.Println("--- by rule:")
 	for _, e := range list {
 		fmt.Printf("  %4d  %s\n", e.n, e.rule)
 	}
 	if !detail {
-		fmt.Println("--- сами находки: назови файл или каталог поменьше, либо --format md")
+		fmt.Println("--- findings themselves: name a file or a smaller directory, or use --format md")
 	}
 }
 

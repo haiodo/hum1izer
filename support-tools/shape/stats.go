@@ -18,7 +18,7 @@ var nestKinds = map[string]bool{
 	"if_expression": true, "while_expression": true, "for_expression": true,
 	"loop_expression": true, "match_expression": true, "with_statement": true,
 	"switch_expression": true,
-	"switch_statement": true, "expression_switch_statement": true,
+	"switch_statement":  true, "expression_switch_statement": true,
 	"type_switch_statement": true, "select_statement": true,
 	"try_statement": true, "catch_clause": true, "when_expression": true,
 }

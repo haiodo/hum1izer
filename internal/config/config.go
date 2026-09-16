@@ -103,7 +103,7 @@ func Load(path string) (Config, error) {
 func (c Config) validate() error {
 	for _, l := range append(append([]string{}, c.Languages.Only...), c.Languages.Ignore...) {
 		if !KnownLang(l) {
-			return fmt.Errorf("неизвестный язык %q, известны: %s", l, strings.Join(Langs(), ", "))
+			return fmt.Errorf("unknown language %q, known: %s", l, strings.Join(Langs(), ", "))
 		}
 	}
 	for _, g := range c.Exclude {
@@ -112,13 +112,13 @@ func (c Config) validate() error {
 		}
 	}
 	if c.Comments.MaxLines != nil && *c.Comments.MaxLines < 0 {
-		return errors.New("comments.max_lines не может быть отрицательным")
+		return errors.New("comments.max_lines cannot be negative")
 	}
 	if c.Comments.Commits != nil && *c.Comments.Commits < 0 {
-		return errors.New("comments.commits не может быть отрицательным")
+		return errors.New("comments.commits cannot be negative")
 	}
 	if c.Comments.MaxLine != nil && *c.Comments.MaxLine < 0 {
-		return errors.New("comments.max_line не может быть отрицательным")
+		return errors.New("comments.max_line cannot be negative")
 	}
 	return nil
 }

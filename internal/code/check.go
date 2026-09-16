@@ -125,8 +125,8 @@ func ruleFindings(rs *humanize.RuleSet, c Comment, genre string) []Finding {
 
 // Категории структурных проверок: по ним их можно отключить целиком.
 const (
-	StructCategory = "Структура комментария"
-	CommitCategory = "Форма коммита"
+	StructCategory = "Comment shape"
+	CommitCategory = "Commit shape"
 )
 
 // --- структурные проверки -------------------------------------------------
@@ -206,12 +206,12 @@ func structChecks(maxLines, maxLineLen int, c Comment) []Finding {
 	isPkgDoc := strings.HasPrefix(c.Next, "package ")
 	if maxLines > 0 && prose > maxLines && !isPkgDoc {
 		// Над запутанной функцией совет "напиши короче" прячет причину.
-		fix := fmt.Sprintf("Уложись в %d строки: оставь причину решения, описание вынеси в документацию", maxLines)
+		fix := fmt.Sprintf("Fit in %d lines: keep the reasoning, move the description to docs", maxLines)
 		if c.Depth >= maxDepth {
-			fix = fmt.Sprintf("Функция под комментарием вложена на %d уровня: чини функцию, а не текст - с ранними возвратами описывать станет нечего", c.Depth)
+			fix = fmt.Sprintf("The function under the comment nests %d levels deep: fix the function, not the text - early returns leave nothing to describe", c.Depth)
 		}
-		add(c.Start, "Длинный комментарий", fix,
-			fmt.Sprintf("строк прозы: %d из %d", prose, c.Lines))
+		add(c.Start, "Long comment", fix,
+			fmt.Sprintf("prose lines: %d of %d", prose, c.Lines))
 	}
 	// Без предела длины строки правило про две строки обходится склейкой:
 	// тот же текст в одну строку на 140 символов формально проходит.
@@ -220,42 +220,42 @@ func structChecks(maxLines, maxLineLen int, c Comment) []Finding {
 			continue
 		}
 		if maxLineLen > 0 && len([]rune(l)) > maxLineLen {
-			add(c.Start+i, "Длинная строка комментария",
-				fmt.Sprintf("Перенеси по %d символов: склеить строки не значит сократить", maxLineLen),
-				fmt.Sprintf("символов: %d", len([]rune(l))))
+			add(c.Start+i, "Long comment line",
+				fmt.Sprintf("Wrap at %d characters: joining lines isn't shortening them", maxLineLen),
+				fmt.Sprintf("characters: %d", len([]rune(l))))
 			break
 		}
 	}
 	for i, l := range lines {
 		if bannerRe.MatchString(l) {
-			add(c.Start+i, "Баннер-разделитель", "Разделяй кодом и файлами, а не линиями из символов", strings.TrimSpace(l))
+			add(c.Start+i, "Separator banner", "Separate with code and files, not lines of symbols", strings.TrimSpace(l))
 			break
 		}
 	}
 	if why := commentedOutCode(c.Lang, c.Text, lines); why != "" {
-		add(c.Start, "Закомментированный код", "Удали: история кода живёт в git, а не в комментарии", why)
+		add(c.Start, "Commented-out code", "Delete it: code history lives in git, not in a comment", why)
 	}
 	if m := todoMarker(c.Text); m >= 0 && !ownerRe.MatchString(c.Text) {
 		at := strings.Count(c.Text[:m], "\n")
-		add(c.Start+at, "TODO без владельца",
-			"Добавь ссылку на задачу или имя: TODO(имя): ... иначе это вечный TODO",
+		add(c.Start+at, "TODO with no owner",
+			"Add a task link or a name: TODO(name): ... otherwise it's a TODO forever",
 			excerpt(c.Text, at+1))
 	}
 	if m := changelogRe.FindStringIndex(c.Text); m != nil {
-		add(c.Start+strings.Count(c.Text[:m[0]], "\n"), "Ченджлог в комментарии",
-			"История правок - в git blame, в коде оставь только текущее положение дел",
+		add(c.Start+strings.Count(c.Text[:m[0]], "\n"), "Changelog in a comment",
+			"Edit history belongs in git blame, keep only the current state in the code",
 			strings.TrimSpace(c.Text[m[0]:minInt(m[1], len(c.Text))]))
 	}
 	if len(mdHeadRe.FindAllString(c.Text, -1)) > 0 || len(mdBulletRe.FindAllString(c.Text, -1)) >= 3 {
-		add(c.Start, "Markdown-эссе в комментарии",
-			"Комментарий - это одна мысль рядом с кодом, а не статья с заголовками и списком", "")
+		add(c.Start, "Markdown essay in a comment",
+			"A comment is one thought next to the code, not an article with headings and a list", "")
 	}
 	if len(stepRe.FindAllString(c.Text, -1)) >= 2 {
-		add(c.Start, "Пошаговая инструкция",
-			"Шаги видны в самом коде, комментарий нужен только там, где код их не объясняет", "")
+		add(c.Start, "Step-by-step instructions",
+			"The steps are visible in the code itself, a comment is only for what the code doesn't explain", "")
 	}
 	if w := restatesCode(c); w != "" {
-		add(c.Start, "Пересказ кода", "Комментарий повторяет имя ниже - удали или скажи почему, а не что", w)
+		add(c.Start, "Comment restates the code", "The comment repeats the name below - delete it or say why, not what", w)
 	}
 	return out
 }
@@ -276,12 +276,12 @@ func commentedOutCode(lang, text string, lines []string) string {
 	}
 	if parser, ok := parsers[lang]; ok {
 		if parser(text) {
-			return fmt.Sprintf("разбирается как код: %d из %d строк", n, len(lines))
+			return fmt.Sprintf("parses as code: %d of %d lines", n, len(lines))
 		}
 		return ""
 	}
 	if n >= 2 && share >= 0.5 {
-		return fmt.Sprintf("%d из %d строк похожи на код", n, len(lines))
+		return fmt.Sprintf("%d of %d lines look like code", n, len(lines))
 	}
 	return ""
 }
@@ -426,24 +426,24 @@ func commitChecks(c Comment) []Finding {
 	subject = strings.TrimSpace(subject)
 
 	if n := len([]rune(subject)); n > subjectLimit {
-		add("Длинный заголовок коммита",
-			fmt.Sprintf("Уложись в %d символов, остальное перенеси в тело", subjectLimit),
-			fmt.Sprintf("%d символов", n))
+		add("Long commit subject",
+			fmt.Sprintf("Fit in %d characters, move the rest to the body", subjectLimit),
+			fmt.Sprintf("%d characters", n))
 	}
 	if strings.HasSuffix(subject, ".") {
-		add("Точка в конце заголовка", "Заголовок коммита - не предложение, точка в конце лишняя", subject)
+		add("Period at the end of the subject", "A commit subject isn't a sentence, drop the trailing period", subject)
 	}
 	if genericSubjectRe.MatchString(subject) {
-		add("Пустой заголовок коммита", "Скажи, что именно изменилось: 'Update' не отличает один коммит от другого", subject)
+		add("Empty commit subject", "Say what actually changed: 'Update' doesn't tell one commit from another", subject)
 	}
 	if m := aiTrailerRe.FindString(c.Text); m != "" {
-		add("AI-подпись в коммите", "Убери трейлер: авторство коммита - твоё", strings.TrimSpace(m))
+		add("AI trailer in the commit", "Remove the trailer: the commit is yours", strings.TrimSpace(m))
 	}
 	if m := thisCommitRe.FindString(c.Text); m != "" {
-		add("This commit ...", "Пиши по делу: 'Add retry to upload', а не 'This commit adds ...'", strings.TrimSpace(m))
+		add("This commit ...", "Get to the point: 'Add retry to upload', not 'This commit adds ...'", strings.TrimSpace(m))
 	}
 	if len(mdBulletRe.FindAllString(c.Text, -1)) >= 5 {
-		add("Список-простыня в коммите", "Пять и больше пунктов - это пять коммитов", "")
+		add("Bullet wall in the commit", "Five or more bullets is five commits", "")
 	}
 	return out
 }

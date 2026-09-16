@@ -15,12 +15,12 @@ import (
 )
 
 const header = "# hum1izer baseline v3\n" +
-	"# Снимок находок. Прогон с --baseline ругается только на то, чего здесь нет.\n" +
-	"# Пересоздать: hum1izer --code --baseline <файл> --write-baseline <путь>\n" +
-	"# Формат: <хэш комментария>\\t<код правила>[\\t<код правила>...]\n" +
-	"# Коды правил расшифрованы ниже. Пути нет намеренно: ключ - текст комментария,\n" +
-	"# поэтому перенос кода в другой файл находку не воскрешает. Обратная сторона:\n" +
-	"# копия того же комментария в новом файле тоже считается известной.\n"
+	"# Snapshot of findings. A run with --baseline flags only what isn't here.\n" +
+	"# Regenerate: hum1izer --code --baseline <file> --write-baseline <path>\n" +
+	"# Format: <comment hash>\\t<rule code>[\\t<rule code>...]\n" +
+	"# Rule codes are decoded below. No path on purpose: the key is the comment\n" +
+	"# text, so moving code to another file doesn't resurrect the finding. The\n" +
+	"# flip side: a copy of the same comment in a new file also counts as known.\n"
 
 // Entry - одна известная находка: правило, сработавшее на этом тексте.
 type Entry struct {
@@ -80,7 +80,7 @@ func Load(path string) (*Set, error) {
 		}
 		f := strings.Split(t, "\t")
 		if len(f) < 2 {
-			return nil, fmt.Errorf("%s:%d: ожидался хэш и хотя бы одно правило через табуляцию", path, line)
+			return nil, fmt.Errorf("%s:%d: expected a hash and at least one rule code separated by tabs", path, line)
 		}
 		// В v1 третьим полем шёл путь к файлу; в ключ он больше не входит
 		if v1 {

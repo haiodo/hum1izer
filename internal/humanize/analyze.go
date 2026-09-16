@@ -93,7 +93,7 @@ func Analyze(rs *RuleSet, text, genre string) Report {
 	r.Markers = MuteByName(MuteByCategory(allSoft, rs.MutedCategories(genre)), rs.MutedRules(genre))
 	r.MutedSoft = len(allSoft) - len(r.Markers)
 
-	dashMuted := rs.MutedBans(genre)["Длинное тире"]
+	dashMuted := rs.MutedBans(genre)["Em dash"]
 	r.Score = cleanliness(rs, r, dashMuted)
 	FillLines(text, r.HardBans)
 	FillLines(text, r.Markers)

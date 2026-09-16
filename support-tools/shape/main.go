@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	ts "github.com/tree-sitter/go-tree-sitter"
+	tscs "github.com/tree-sitter/tree-sitter-c-sharp/bindings/go"
 	tsc "github.com/tree-sitter/tree-sitter-c/bindings/go"
 	tsgo "github.com/tree-sitter/tree-sitter-go/bindings/go"
 	tsjava "github.com/tree-sitter/tree-sitter-java/bindings/go"
-	tscs "github.com/tree-sitter/tree-sitter-c-sharp/bindings/go"
 	tspy "github.com/tree-sitter/tree-sitter-python/bindings/go"
 	tsrust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
 	tsts "github.com/tree-sitter/tree-sitter-typescript/bindings/go"

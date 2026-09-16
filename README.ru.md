@@ -62,10 +62,26 @@ hum1izer upgrade --check   # только посмотреть, есть ли н
 hum1izer install --claude --codex --opencode --hermes --pi
 hum1izer install --all              # все сразу
 hum1izer install --claude --dir .   # в проект, а не в домашний каталог
+hum1izer install --claude --hooks   # плюс хуки Claude Code
 hum1izer install --print            # посмотреть SKILL.md, ничего не ставя
 hum1izer install --repo             # SKILL.md для корня репозитория (make skill)
 make skills                         # собрать и поставить всем
 ```
+
+`--hooks` ставит одно и то же для каждого агента, который это умеет: свод
+правил в начале сессии и проверку файла сразу после того, как агент его правил.
+Проверяется только этот файл, не дерево, и молча, когда находок нет.
+
+| Агент | Что пишет `--hooks` |
+|---|---|
+| `--claude` | `~/.claude/settings.json`, ключи `hooks.SessionStart` и `hooks.PostToolUse` |
+| `--zcode` | `~/.zcode/cli/config.json`, ключи `hooks.events.*` и `hooks.enabled` |
+| `--codex` | `~/.codex/hooks.json`, тот же формат событий |
+| `--opencode` | плагин `~/.config/opencode/plugin/hum1izer.js` |
+| `--pi` | расширение `~/.pi/agent/extensions/hum1izer.ts` |
+
+У Hermes и общего `--agents` цепляться не за что; там `--hooks` так и говорит
+и ничего не ставит.
 
 Формат общий - [Agent Skills](https://agentskills.io), различаются только шапка
 и путь:
@@ -73,6 +89,7 @@ make skills                         # собрать и поставить вс�
 | Флаг | Куда |
 |---|---|
 | `--claude` | `~/.claude/skills/hum1izer/SKILL.md` |
+| `--zcode` | `~/.zcode/skills/hum1izer/SKILL.md` |
 | `--codex` | `~/.codex/skills/hum1izer/SKILL.md` |
 | `--opencode` | `~/.config/opencode/skill/hum1izer/SKILL.md` |
 | `--hermes` | `~/.hermes/skills/devops/hum1izer/SKILL.md` |
@@ -100,7 +117,7 @@ cat draft.txt | hum1izer -             # из stdin
 hum1izer --code ./src                  # комментарии в коде
 hum1izer --code .                      # то же плюс последние 20 коммитов
 hum1izer --code --langs go ./src       # только один язык
-hum1izer --code --only "TODO без владельца" .   # только одно правило
+hum1izer --code --only "TODO with no owner" .   # только одно правило
 
 hum1izer tui ./src                     # разобрать находки руками
 hum1izer calibrate .                   # подобрать пределы под репозиторий
@@ -179,10 +196,10 @@ Title Case в заголовках, обрыв текста на полусло�
 
 ```
 $ hum1izer --quiet ai-sample.txt
-ai-sample.txt   19/100 [рерайт] банов: 14, маркеров: 13
+ai-sample.txt                             18/100 [rewrite] bans: 6 (+0 dashes), markers: 14.0/100 words
 
 $ hum1izer --genre academic --quiet ai-sample.txt
-ai-sample.txt   35/100 [рерайт] банов: 9, маркеров: 5
+ai-sample.txt                             46/100 [rewrite] bans: 3 (+0 dashes), markers: 7.5/100 words
 ```
 
 ## Комментарии в коде и коммиты
@@ -253,29 +270,29 @@ string | undefined`, `// createAction(builder, {...})` - настоящий мё
 
 | Находка | Почему |
 |---|---|
-| Пересказ кода | `// set user name` над `setUserName()` не несёт информации |
-| Закомментированный код | история кода живёт в git |
-| Пересказ кода | комментарий повторяет имя рядом, в том числе хвостовой |
-| Длинный комментарий | длиннее `--max-lines` строк прозы, по умолчанию 2 |
+| Comment restates the code | `// set user name` над `setUserName()` не несёт информации |
+| Commented-out code | история кода живёт в git |
+| Comment restates the code | комментарий повторяет имя рядом, в том числе хвостовой |
+| Long comment | длиннее `--max-lines` строк прозы, по умолчанию 2 |
 Два строки по умолчанию - это позиция, а не ошибка: комментарий отвечает на
 «почему», и если «почему» не влезает, объяснение просится в документацию рядом с
 кодом. Считается только проза: пустые строки и строки тегов (`@param`,
 `@returns`) в счёт не идут, а документация пакета (`package ...` следующей
 строкой) от проверки освобождена. Проекту с другой конвенцией - `max_lines` в
 `.hum1izer.yaml`.
-| Баннер-разделитель | `// =========` разделяет файлами, а не линиями |
-| TODO без владельца | без имени или ссылки на задачу это вечный TODO |
-| Ченджлог в комментарии | «Updated X to Y», «Author:», дата - это git blame |
-| Markdown-эссе | заголовки и списки внутри комментария |
-| Пошаговая инструкция | «Step 1, Step 2» дублирует сам код |
-| Комментарий-пустышка | `// constructor`, `// imports`, `// инициализация` |
-| Пустая важность | «ensures that», «отвечает за», «под капотом» |
-| Учебный тон | «as you can see», «давайте», «теперь мы» |
-| Извинение | «почему-то», «костыль», «hopefully», «not sure why» |
-| Комментарий-обещание | «временно», «for now», «will be removed» |
-| Эмодзи | в дифф и в grep попадают шумом |
-| Метка инструмента | `ponytail:`, `caveman:`, `claude:`, `AI:` - следы плагина или модели |
-| Длинная строка | склеить три строки в одну на 140 символов не значит сократить |
+| Separator banner | `// =========` разделяет файлами, а не линиями |
+| TODO with no owner | без имени или ссылки на задачу это вечный TODO |
+| Changelog in a comment | «Updated X to Y», «Author:», дата - это git blame |
+| Markdown essay | заголовки и списки внутри комментария |
+| Step-by-step instructions | «Step 1, Step 2» дублирует сам код |
+| Empty comment | `// constructor`, `// imports`, `// инициализация` |
+| Empty importance | «ensures that», «отвечает за», «под капотом» |
+| Tutorial tone | «as you can see», «давайте», «теперь мы» |
+| Apology | «почему-то», «костыль», «hopefully», «not sure why» |
+| Promise comment | «временно», «for now», «will be removed» |
+| Emoji | в дифф и в grep попадают шумом |
+| Tool tag | `ponytail:`, `caveman:`, `claude:`, `AI:` - следы плагина или модели |
+| Long line | склеить три строки в одну на 140 символов не значит сократить |
 
 Для коммитов сверх этого: длина заголовка больше 72 символов, точка в конце
 заголовка, заголовок вида «Update» или «Fix», AI-подпись в трейлере,
@@ -323,8 +340,8 @@ baseline: .hum1izer-baseline   # путь к снимку, считается о
 rules:
   only: []          # белый список. Пусто - все
   disable:
-    - Длинное тире            # имя правила
-    - Структура комментария   # или имя категории целиком
+    - Em dash                 # имя правила
+    - Comment shape           # или имя категории целиком
 
 genre: code         # жанр для правил прозы
 rules_file: ""      # свой rules.yaml, путь от файла настроек
@@ -332,7 +349,7 @@ rules_file: ""      # свой rules.yaml, путь от файла настро
 
 Имена в `rules` берутся прямо из отчёта: что напечатано после `!` или `*`, то и
 пишется в `disable`. Работает и имя категории - тогда глушится вся группа.
-Категории структурных проверок: `Структура комментария` и `Форма коммита`.
+Категории структурных проверок: `Comment shape` и `Commit shape`.
 
 Неизвестный ключ, неизвестный язык или битый glob ломают загрузку с ошибкой:
 молча не работающая настройка хуже её отсутствия.
@@ -354,8 +371,8 @@ hum1izer --code --baseline .hum1izer-baseline .                    # прове�
 ```
 # hum1izer baseline v3
 #
-# 073a77 Длинная строка комментария
-# c3a286 TODO без владельца
+# 073a77 Long comment line
+# c3a286 TODO with no owner
 #
 55dc2ad977ba	c3a286	073a77
 ```
@@ -387,9 +404,10 @@ hum1izer --code --format md --limit 20 ./src
 
 ```markdown
 ## src/a.ts:5-14
-block 55dc2ad977ba | `ts` | comment | вес 7
+block 55dc2ad977ba | `ts` | comment | weight 7
 
-- **this function is responsible for** (стр. 6) - Скажи, почему так сделано
+- **this function is responsible for** (line 6)
+  - Say why it's done this way, not what the line below already does
 
 ...текст комментария...
 
@@ -413,7 +431,7 @@ hum1izer fix --block 55dc2ad977ba --text "<новый текст>" --write src/a
  "kind":"comment","score":7,
  "raw":"/**\n * This function is responsible for handling the request.\n */",
  "findings":[{"rule":"this function is responsible for","line":2,"hard":false,
-              "fix":"Скажи, почему так сделано, а не что делает строка ниже"}]}
+              "fix":"Say why it's done this way, not what the line below already does"}]}
 ```
 
 `raw` - исходный текст байт-в-байт, вместе с `//` и `/* */`. Агент правит блок
@@ -442,15 +460,15 @@ go run ./eval/lift --file valid.jsonl --lang ru --tsv  # машинный выв
 
 | Маркер | lift | |
 |---|---|---|
-| Эмодзи-декор (ru) | у человека нет вовсе | идеальный разделитель |
+| Emoji decoration (ru) | у человека нет вовсе | идеальный разделитель |
 | seamless(ly) (en) | 21.0 | |
 | crucial (en) | 17.7 | |
 | Важно понимать/помнить, что (ru) | 15.1 | |
 | not only X but also Y (en) | 12.5 | |
-| Канцелярит (ru) | 2.8 | |
+| Bureaucratese (ru) | 2.8 | |
 | Em dash (en) | 1.7 | в английском сигнал есть |
-| **Длинное тире (ru)** | **0.94** | у человека чаще, чем у машины |
-| **Латиница внутри кириллицы** | **0.28** | это опечатки людей, не след машины |
+| **Em dash (ru)** | **0.94** | у человека чаще, чем у машины |
+| **Latin inside a Cyrillic word** | **0.28** | это опечатки людей, не след машины |
 | **Tutorial voice (en)** | **0.79** | у человека чаще |
 
 Правила с lift ниже 1.2 веса не получают. Русское тире остаётся хард-баном как
@@ -577,7 +595,7 @@ printf '%s\n' '{"block":"55dc2ad977ba","text":"новый текст"}' \
 ```
 
 Одинаковый текст в нескольких файлах - один блок с одним id, в отчёте он помечен
-`копий текста: N`. Без `file` правка уходит во все копии, и для дежурной фразы,
+`text copies: N`. Без `file` правка уходит во все копии, и для дежурной фразы,
 повторённой по дереву, это то, что нужно. С `file` - только в указанный.
 
 Даётся только проза: маркер, отступ и перенос по `--max-line` инструмент

@@ -75,7 +75,7 @@ func TestRewriteAgainstStub(t *testing.T) {
 	got, use, err := c.Rewrite(context.Background(), Request{
 		Comment:  "// длинный комментарий про всё на свете",
 		Code:     "func f() {}",
-		Findings: []string{"Длинный комментарий: уложись в 2 строки"},
+		Findings: []string{"Long comment: уложись в 2 строки"},
 		MaxLines: 2,
 		Lang:     "ru",
 	})

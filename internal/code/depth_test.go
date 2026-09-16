@@ -47,11 +47,11 @@ func TestLongCommentOverDeepFunction(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("правило не сработало")
 	}
-	if !strings.Contains(got[0].Fix, "чини функцию") {
+	if !strings.Contains(got[0].Fix, "fix the function") {
 		t.Fatalf("совет не про функцию: %q", got[0].Fix)
 	}
 	c.Depth = 2
-	if got = structChecks(2, 0, c); !strings.Contains(got[0].Fix, "Уложись") {
+	if got = structChecks(2, 0, c); !strings.Contains(got[0].Fix, "Fit in") {
 		t.Fatalf("на плоской функции совет должен остаться прежним: %q", got[0].Fix)
 	}
 }

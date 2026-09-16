@@ -3,7 +3,7 @@
 package skill
 
 import (
-	_ "embed"
+	"embed"
 	"flag"
 	"fmt"
 	"os"
@@ -13,6 +13,19 @@ import (
 
 //go:embed body.md
 var body string
+
+//go:embed rules.md
+var rules string
+
+//go:embed reference
+var reference embed.FS
+
+//go:embed plugins
+var plugins embed.FS
+
+// Rules - короткий свод правил для комментариев. Его же печатает хук
+// SessionStart, поэтому текст живёт одним файлом, а не двумя копиями.
+func Rules() string { return strings.TrimSpace(rules) }
 
 const name = "hum1izer"
 
@@ -35,6 +48,11 @@ var targets = []Target{
 name: ` + name + `
 description: "` + description + `"
 user-invocable: true
+license: MIT
+---`},
+	{Flag: "zcode", Agent: "ZCode", Dir: ".zcode/skills/" + name, frontMatter: `---
+name: ` + name + `
+description: "` + description + `"
 license: MIT
 ---`},
 	{Flag: "codex", Agent: "Codex", Dir: ".codex/skills/" + name, frontMatter: `---
@@ -63,35 +81,40 @@ name: ` + name + `
 description: "` + description + `"
 license: MIT
 ---`},
-	{Flag: "agents", Agent: "любой агент по стандарту Agent Skills", Dir: ".agents/skills/" + name, frontMatter: `---
+	{Flag: "agents", Agent: "any agent following the Agent Skills standard", Dir: ".agents/skills/" + name, frontMatter: `---
 name: ` + name + `
 description: "` + description + `"
 license: MIT
 ---`},
 }
 
-const usage = `hum1izer install - поставить скилл для агента.
+const usage = `hum1izer install - install the skill for an agent.
 
-  hum1izer install --claude --codex     выбранные агенты
-  hum1izer install --all                все сразу
-  hum1izer install --claude --dir .     в проект, а не в домашний каталог
-  hum1izer install --print              напечатать SKILL.md и выйти
+  hum1izer install --claude --codex     selected agents
+  hum1izer install --all                all at once
+  hum1izer install --claude --dir .     into the project, not the home dir
+  hum1izer install --claude --hooks     plus hooks for that agent
+  hum1izer install --print              print SKILL.md and exit
 
-Агенты:
+Agents:
   --claude   ~/.claude/skills/hum1izer/SKILL.md
+  --zcode    ~/.zcode/skills/hum1izer/SKILL.md
   --codex    ~/.codex/skills/hum1izer/SKILL.md
   --opencode ~/.config/opencode/skill/hum1izer/SKILL.md
   --hermes   ~/.hermes/skills/devops/hum1izer/SKILL.md
   --pi       ~/.pi/agent/skills/hum1izer/SKILL.md
   --agents   ~/.agents/skills/hum1izer/SKILL.md
-             opencode читает и этот каталог, и ~/.claude/skills
+             opencode also reads this directory, and ~/.claude/skills
 
-Прочее:
-  --all      все агенты сразу
-  --dir D    корень вместо домашнего каталога
-  --force    перезаписать, если файл уже есть
-  --print    вывести SKILL.md в stdout
-  --repo     вывести SKILL.md для корня репозитория (make skill)
+Other:
+  --all      all agents at once
+  --dir D    root instead of the home directory
+  --force    overwrite if the file already exists
+  --hooks    install hooks for the selected agents: rules at session start and
+             a check right after editing a file. Claude Code, ZCode and Codex
+             get them in settings, opencode and pi as a plugin
+  --print    print SKILL.md to stdout
+  --repo     print SKILL.md for the repo root (make skill)
 `
 
 // Run выполняет подкоманду install. Возвращает код выхода.
@@ -100,13 +123,14 @@ func Run(args []string, version string) int {
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	picked := map[string]*bool{}
 	for _, t := range targets {
-		picked[t.Flag] = fs.Bool(t.Flag, false, "поставить для "+t.Agent)
+		picked[t.Flag] = fs.Bool(t.Flag, false, "install for "+t.Agent)
 	}
-	all := fs.Bool("all", false, "все агенты сразу")
-	root := fs.String("dir", "", "корень вместо домашнего каталога")
-	force := fs.Bool("force", false, "перезаписать существующий файл")
-	print := fs.Bool("print", false, "вывести SKILL.md в stdout")
-	repo := fs.Bool("repo", false, "вывести SKILL.md для корня репозитория")
+	all := fs.Bool("all", false, "all agents at once")
+	root := fs.String("dir", "", "root instead of the home directory")
+	force := fs.Bool("force", false, "overwrite the existing file")
+	print := fs.Bool("print", false, "print SKILL.md to stdout")
+	repo := fs.Bool("repo", false, "print SKILL.md for the repo root")
+	hooks := fs.Bool("hooks", false, "register Claude Code hooks in settings.json")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -125,7 +149,7 @@ func Run(args []string, version string) int {
 			chosen = append(chosen, t)
 		}
 	}
-	if len(chosen) == 0 {
+	if len(chosen) == 0 && !*hooks {
 		fs.Usage()
 		return 2
 	}
@@ -134,7 +158,7 @@ func Run(args []string, version string) int {
 	if base == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "домашний каталог: %v\n", err)
+			fmt.Fprintf(os.Stderr, "home directory: %v\n", err)
 			return 2
 		}
 		base = home
@@ -144,7 +168,7 @@ func Run(args []string, version string) int {
 	for _, t := range chosen {
 		path := filepath.Join(base, filepath.FromSlash(t.Dir), "SKILL.md")
 		if _, err := os.Stat(path); err == nil && !*force {
-			fmt.Printf("  = %-10s уже стоит: %s (--force перезапишет)\n", t.Flag, path)
+			fmt.Printf("  = %-10s already installed: %s (--force overwrites)\n", t.Flag, path)
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -157,7 +181,20 @@ func Run(args []string, version string) int {
 			exit = 2
 			continue
 		}
+		if err := writeRef(filepath.Dir(path), *force); err != nil {
+			fmt.Fprintf(os.Stderr, "  ! %s reference: %v\n", t.Flag, err)
+			exit = 2
+		}
 		fmt.Printf("  + %-10s %s\n", t.Flag, path)
+	}
+	if *hooks {
+		flags := make([]string, 0, len(chosen))
+		for _, t := range chosen {
+			flags = append(flags, t.Flag)
+		}
+		if code := installHooks(base, flags, *force); code != 0 {
+			exit = code
+		}
 	}
 	return exit
 }
@@ -192,10 +229,42 @@ Claude Code, Codex, opencode, Hermes, Pi, agents. ` + "`hum1izer install --all`"
 // RepoFile - содержимое SKILL.md для корня. Версия не подставляется: файл
 // лежит в git, и строка с ней меняла бы его на каждом релизе впустую.
 func RepoFile() string {
-	return repoHead + "\n" + strings.TrimSpace(body) + "\n"
+	return repoHead + "\n" + text() + "\n"
 }
 
 func render(t Target, version string) string {
-	return t.frontMatter + "\n\n" + strings.TrimSpace(body) +
-		"\n\n<!-- поставлено hum1izer " + version + " -->\n"
+	return t.frontMatter + "\n\n" + text() +
+		"\n\n<!-- installed by hum1izer " + version + " -->\n"
+}
+
+// text - тело скилла с подставленными правилами: в body.md на их месте стоит
+// метка, чтобы свод правил не пришлось держать в двух файлах сразу.
+func text() string {
+	return strings.Replace(strings.TrimSpace(body), "<!-- rules -->", Rules(), 1)
+}
+
+// writeRef раскладывает reference/*.md рядом со SKILL.md. Без них ядро скилла
+// ссылается в пустоту.
+func writeRef(dir string, force bool) error {
+	entries, err := reference.ReadDir("reference")
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		data, err := reference.ReadFile("reference/" + e.Name())
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(dir, "reference", e.Name())
+		if _, err := os.Stat(path); err == nil && !force {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }

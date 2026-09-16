@@ -1,9 +1,15 @@
 # hum1izer baseline v3
-# Снимок находок. Прогон с --baseline ругается только на то, чего здесь нет.
-# Пересоздать: hum1izer --code --baseline <файл> --write-baseline <путь>
-# Формат: <хэш комментария>\t<код правила>[\t<код правила>...]
-# Коды правил расшифрованы ниже. Пути нет намеренно: ключ - текст комментария,
-# поэтому перенос кода в другой файл находку не воскрешает. Обратная сторона:
-# копия того же комментария в новом файле тоже считается известной.
+# Snapshot of findings. A run with --baseline flags only what isn't here.
+# Regenerate: hum1izer --code --baseline <file> --write-baseline <path>
+# Format: <comment hash>\t<rule code>[\t<rule code>...]
+# Rule codes are decoded below. No path on purpose: the key is the comment
+# text, so moving code to another file doesn't resurrect the finding. The
+# flip side: a copy of the same comment in a new file also counts as known.
 #
+# e67fb1 Long comment
 #
+145c6f0587fe	e67fb1
+1a1e7a65c03d	e67fb1
+284a8d1772bc	e67fb1
+6acd5db88452	e67fb1
+a26ed955d538	e67fb1

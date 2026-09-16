@@ -23,62 +23,65 @@ import (
 // Version подставляется линкером при сборке релиза.
 var Version = "dev"
 
-const usage = `hum1izer - проверка текста, комментариев в коде и коммитов на следы
-нейросети, канцелярит и штампы.
+const usage = `hum1izer - checks prose, code comments and commit messages for AI
+traces, officialese and cliches.
 
-  hum1izer [флаги] файл...         проза: md, txt, из stdin через -
-  hum1izer --code путь...          комментарии в .go .c .cpp .ts .js .svelte .swift .java .kt
-  hum1izer --code репозиторий      то же плюс последние коммиты, если там git
-  hum1izer install --claude ...    поставить скилл для агента
-  hum1izer init [путь]             создать .hum1izer.yaml с настройками проекта
-  hum1izer upgrade                 обновиться до последнего релиза с GitHub
-  hum1izer fix --block <хэш> ...   удалить или заменить блок комментария
-  hum1izer tui [путь]              разобрать находки руками в три панели
-  hum1izer llm --key <ключ>         выбрать модель для переписывания
-  hum1izer calibrate [путь]        подобрать пределы под этот репозиторий
+  hum1izer [flags] file...         prose: md, txt, stdin via -
+  hum1izer --code path...          comments in .go .c .cpp .ts .js .svelte .swift .java .kt
+  hum1izer --code repo             same, plus recent commits if it's a git repo
+  hum1izer install --claude ...    install the skill for an agent
+  hum1izer init [path]             create .hum1izer.yaml with project settings
+  hum1izer upgrade                 upgrade to the latest GitHub release
+  hum1izer fix --block <hash> ...  remove or replace a comment block
+  hum1izer tui [path]              triage findings by hand in three panes
+  hum1izer llm --key <key>         pick a model for rewriting
+  hum1izer calibrate [path]        tune thresholds for this repo
+  hum1izer hook post-edit          post-edit check, called by an agent
 
-Флаги прозы:
-  --genre   жанр текста: marketing (по умолчанию), academic, legal, fiction, news
-  --lang    язык набора правил: ru (по умолчанию) или en
-  --rules   свой файл правил вместо встроенного
+Prose flags:
+  --genre   text genre: marketing (default), academic, legal, fiction, news
+  --lang    rule set language: ru (default) or en
+  --rules   custom rules file instead of the built-in one
 
-Флаги кода:
-  --code        разбирать аргументы как исходники, а не как прозу
-  --commits N   сколько последних коммитов проверить, 0 - не проверять (20)
-  --max-lines N комментарий длиннее скольких строк - находка, 0 - не считать (2)
-  --max-line N  строка комментария длиннее скольких символов - находка (100)
-  --skip-tests  пропускать _test.go, *.test.*, *.spec.*
+Code flags:
+  --code        treat arguments as source code, not prose
+  --commits N   how many recent commits to check, 0 - skip (20)
+  --max-lines N comment longer than this many lines is a finding, 0 - don't count (2)
+  --max-line N  comment line longer than this many chars is a finding (100)
+  --skip-tests  skip _test.go, *.test.*, *.spec.*
 
-Настройки проекта:
-  .hum1izer.yaml ищется от проверяемого каталога вверх до корня. В нём живут
-  предел длины комментария, языки, исключения и отключённые правила. Флаги
-  командной строки перекрывают файл.
-  --config F  взять этот файл настроек
-  --no-config игнорировать .hum1izer.yaml
+Project settings:
+  .hum1izer.yaml is looked up from the checked directory up to the root. It
+  holds the comment length limit, languages, excludes and disabled rules.
+  Command-line flags override the file.
+  --config F  use this settings file
+  --no-config ignore .hum1izer.yaml
 
-Снимок для CI:
-  --baseline F      сверяться с файлом снимка и ругаться только на новое
-  --write-baseline  перезаписать снимок текущими находками
+CI baseline:
+  --baseline F      compare against a baseline file, flag only new findings
+  --write-baseline  overwrite the baseline with current findings
 
-Вывод:
-  --format  text (по умолчанию), md, jsonl, json, quiet
-  --only    оставить только эти правила или категории, через запятую
-  --langs   только эти языки: c, cpp, go, ts, js, svelte, swift, java, kotlin
-  --limit N сколько блоков отдать, 0 - все. Первыми идут самые грязные
-  --top N   сколько строк показать в сводке, 0 - все (по умолчанию 12)
+Output:
+  --format  text (default), md, jsonl, json, quiet
+  --only    keep only these rules or categories, comma-separated
+  --langs   only these languages: c, cpp, go, ts, js, svelte, swift, java, kotlin
+  --limit N how many blocks to emit, 0 - all. Worst blocks come first
+  --top N   how many lines in the summary, 0 - all (default 12)
 
-  Каталог в аргументе - сводка по правилам без самих находок: на дереве их
-  тысячи. Назови файл - и находки печатаются целиком.
-  --json    то же, что --format json
-  --quiet   то же, что --format quiet
+  A directory argument gives a summary by rule, without the findings
+  themselves: a tree has thousands of them. Name a file and findings print in
+  full.
+  --json    same as --format json
+  --quiet   same as --format quiet
 
-md - формат для агента: заголовок на комментарий, список замечаний и сам текст
-в огороженном блоке, байт в байт. Агент правит блок целиком, заменяет текст
-точным совпадением и запускает проверку снова, пока remaining не станет нулём.
-jsonl - то же самое машинно, по строке JSON на комментарий. Текст там
-экранирован, поэтому для точной замены он менее удобен.
+md - format for an agent: a header per comment, a list of notes and the text
+itself in a fenced block, byte for byte. The agent edits the whole block,
+replaces the text with an exact match and reruns the check until remaining
+hits zero.
+jsonl - the same, machine-readable, one JSON line per comment. The text is
+escaped there, so it's less convenient for an exact replace.
 
-Код возврата: 0 чисто, 1 есть жёсткие находки, 2 ошибка.
+Exit code: 0 clean, 1 hard findings, 2 error.
 `
 
 // Run - точка входа. Вынесена из main, чтобы модуль давал рабочую команду и по
@@ -100,29 +103,31 @@ func Run() int {
 			return runLLMCmd(os.Args[2:])
 		case "calibrate":
 			return runCalibrate(os.Args[2:])
+		case "hook":
+			return runHook(os.Args[2:])
 		}
 	}
 
-	genre := flag.String("genre", "marketing", "жанр текста")
-	lang := flag.String("lang", "ru", "язык набора правил: ru или en")
-	format := flag.String("format", "text", "формат вывода: text, md, jsonl, json, quiet")
-	asJSON := flag.Bool("json", false, "то же, что --format json")
-	quiet := flag.Bool("quiet", false, "то же, что --format quiet")
-	top := flag.Int("top", 12, "сколько строк показать в сводке")
-	limit := flag.Int("limit", 0, "сколько блоков отдать, 0 - все")
-	rulesPath := flag.String("rules", "", "свой файл правил")
-	codeMode := flag.Bool("code", false, "разбирать аргументы как исходники")
-	commits := flag.Int("commits", 20, "сколько последних коммитов проверить")
-	maxLines := flag.Int("max-lines", 2, "комментарий длиннее скольких строк считать находкой, 0 - не считать")
-	maxLine := flag.Int("max-line", 100, "строка комментария длиннее скольких символов - находка, 0 - не считать")
-	skipTests := flag.Bool("skip-tests", false, "пропускать тестовые файлы")
-	basePath := flag.String("baseline", "", "файл снимка: ругаться только на новое")
-	writeBase := flag.Bool("write-baseline", false, "перезаписать снимок текущими находками")
-	cfgPath := flag.String("config", "", "файл настроек вместо поиска .hum1izer.yaml")
-	noConfig := flag.Bool("no-config", false, "игнорировать .hum1izer.yaml")
-	only := flag.String("only", "", "оставить только эти правила или категории, через запятую")
-	langs := flag.String("langs", "", "сканировать только эти языки, через запятую")
-	showVersion := flag.Bool("version", false, "показать версию")
+	genre := flag.String("genre", "marketing", "text genre")
+	lang := flag.String("lang", "ru", "rule set language: ru or en")
+	format := flag.String("format", "text", "output format: text, md, jsonl, json, quiet")
+	asJSON := flag.Bool("json", false, "same as --format json")
+	quiet := flag.Bool("quiet", false, "same as --format quiet")
+	top := flag.Int("top", 12, "how many lines in the summary")
+	limit := flag.Int("limit", 0, "how many blocks to emit, 0 - all")
+	rulesPath := flag.String("rules", "", "custom rules file")
+	codeMode := flag.Bool("code", false, "treat arguments as source code")
+	commits := flag.Int("commits", 20, "how many recent commits to check")
+	maxLines := flag.Int("max-lines", 2, "comment longer than this many lines is a finding, 0 - don't count")
+	maxLine := flag.Int("max-line", 100, "comment line longer than this many chars is a finding, 0 - don't count")
+	skipTests := flag.Bool("skip-tests", false, "skip test files")
+	basePath := flag.String("baseline", "", "baseline file: flag only new findings")
+	writeBase := flag.Bool("write-baseline", false, "overwrite the baseline with current findings")
+	cfgPath := flag.String("config", "", "settings file instead of looking up .hum1izer.yaml")
+	noConfig := flag.Bool("no-config", false, "ignore .hum1izer.yaml")
+	only := flag.String("only", "", "keep only these rules or categories, comma-separated")
+	langs := flag.String("langs", "", "scan only these languages, comma-separated")
+	showVersion := flag.Bool("version", false, "show version")
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	flag.Parse()
 
@@ -139,7 +144,7 @@ func Run() int {
 
 	cfg, err := loadConfig(*cfgPath, *noConfig, flag.Arg(0))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "настройки: %v\n", err)
+		fmt.Fprintf(os.Stderr, "settings: %v\n", err)
 		return 2
 	}
 	if !given["rules"] && cfg.RulesFile != "" {
@@ -167,7 +172,7 @@ func Run() int {
 		cfg.Languages.Only = splitList(*langs)
 		for _, l := range cfg.Languages.Only {
 			if !config.KnownLang(l) {
-				fmt.Fprintf(os.Stderr, "--langs: неизвестный язык %q, известны: %s\n", l, strings.Join(config.Langs(), ", "))
+				fmt.Fprintf(os.Stderr, "--langs: unknown language %q, known: %s\n", l, strings.Join(config.Langs(), ", "))
 				return 2
 			}
 		}
@@ -181,7 +186,7 @@ func Run() int {
 		*commits = 0
 	}
 	if *writeBase && *basePath == "" {
-		fmt.Fprintln(os.Stderr, "--write-baseline без --baseline ничего не пишет: укажи файл снимка")
+		fmt.Fprintln(os.Stderr, "--write-baseline without --baseline writes nothing: give a baseline file")
 	}
 	switch {
 	case *asJSON:
@@ -209,11 +214,11 @@ func loadProse(rulesPath, lang string) (*humanize.RuleSet, error) {
 func runText(args []string, rulesPath, lang, genre, format string, top int) int {
 	rs, err := loadProse(rulesPath, lang)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "правила: %v\n", err)
+		fmt.Fprintf(os.Stderr, "rules: %v\n", err)
 		return 2
 	}
 	if !rs.HasGenre(genre) {
-		fmt.Fprintf(os.Stderr, "неизвестный жанр %q, доступны: %s\n", genre, strings.Join(rs.Genres, ", "))
+		fmt.Fprintf(os.Stderr, "unknown genre %q, available: %s\n", genre, strings.Join(rs.Genres, ", "))
 		return 2
 	}
 
@@ -226,7 +231,7 @@ func runText(args []string, rulesPath, lang, genre, format string, top int) int 
 			continue
 		}
 		if strings.TrimSpace(text) == "" {
-			fmt.Printf("%s: текст пуст, сканировать нечего\n", src)
+			fmt.Printf("%s: text is empty, nothing to scan\n", src)
 			continue
 		}
 		if isMarkup(src) {
@@ -235,13 +240,13 @@ func runText(args []string, rulesPath, lang, genre, format string, top int) int 
 		rep := humanize.Analyze(rs, text, genre)
 		switch format {
 		case "md":
-			fmt.Fprintln(os.Stderr, "--format md есть только у --code, для прозы доступны text, json, quiet")
+			fmt.Fprintln(os.Stderr, "--format md only works with --code, prose supports text, json, quiet")
 			return 2
 		case "json", "jsonl":
 			printJSON(src, rep)
 		case "quiet":
 			phrases, dashes := splitBans(rep.HardBans)
-			fmt.Printf("%-40s %3d/100 [%s] банов: %d (+%d тире), маркеров: %.1f/100 слов\n",
+			fmt.Printf("%-40s %3d/100 [%s] bans: %d (+%d dashes), markers: %.1f/100 words\n",
 				src, rep.Score.Value, rep.Score.Band, phrases, dashes,
 				per100(countHits(rep.Markers), rep.Rhythm.Words))
 		default:
@@ -291,21 +296,21 @@ func collectItems(args []string, o codeOpts) (items []code.Item, files, blocks, 
 	cs := code.CodeSets{MaxLines: o.maxLines, MaxLineLen: o.maxLine}
 	excludes, err := o.cfg.Excludes()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "исключения: %v\n", err)
+		fmt.Fprintf(os.Stderr, "excludes: %v\n", err)
 		return nil, 0, 0, 2
 	}
 	filter := code.Filter{SkipTests: o.skipTests, Langs: o.cfg.AllowedLangs(), Exclude: excludes}
 
 	if cs.RU, err = loadProse(o.rules, "ru"); err != nil {
-		fmt.Fprintf(os.Stderr, "русские правила: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ru rules: %v\n", err)
 		return nil, 0, 0, 2
 	}
 	if cs.EN, err = humanize.LoadBuiltin("en"); err != nil {
-		fmt.Fprintf(os.Stderr, "английские правила: %v\n", err)
+		fmt.Fprintf(os.Stderr, "en rules: %v\n", err)
 		return nil, 0, 0, 2
 	}
 	if cs.Code, err = humanize.LoadBuiltin("code"); err != nil {
-		fmt.Fprintf(os.Stderr, "правила для кода: %v\n", err)
+		fmt.Fprintf(os.Stderr, "code rules: %v\n", err)
 		return nil, 0, 0, 2
 	}
 
@@ -348,7 +353,7 @@ func runCode(args []string, o codeOpts) int {
 	if o.baseline != "" {
 		var err error
 		if items, exit, err = applyBaseline(o, items); err != nil {
-			fmt.Fprintf(os.Stderr, "снимок: %v\n", err)
+			fmt.Fprintf(os.Stderr, "baseline: %v\n", err)
 			return 2
 		}
 		if o.writeBaseline {
@@ -371,7 +376,7 @@ func runCode(args []string, o codeOpts) int {
 	case "json":
 		printFindingsJSON(items, o.limit)
 	case "quiet":
-		fmt.Printf("файлов: %d, комментариев: %d, блоков с находками: %d, находок: %d\n",
+		fmt.Printf("files: %d, comments: %d, blocks with findings: %d, findings: %d\n",
 			files, blocks, len(items), countFindings(items))
 	default:
 		printCodeReport(items, files, blocks, o.limit, o.top, allFiles(args))
@@ -468,12 +473,12 @@ func applyBaseline(o codeOpts, items []code.Item) ([]code.Item, int, error) {
 		if err := baseline.Write(o.baseline, all); err != nil {
 			return nil, 0, err
 		}
-		fmt.Printf("снимок записан: %s, находок %d\n", o.baseline, len(all))
+		fmt.Printf("baseline written: %s, findings %d\n", o.baseline, len(all))
 		return nil, 0, nil
 	}
 
 	if _, err := os.Stat(o.baseline); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "снимка %s нет: все находки считаются новыми\n", o.baseline)
+		fmt.Fprintf(os.Stderr, "baseline %s not found: all findings count as new\n", o.baseline)
 	}
 	base, err := baseline.Load(o.baseline)
 	if err != nil {
@@ -496,7 +501,7 @@ func applyBaseline(o codeOpts, items []code.Item) ([]code.Item, int, error) {
 		newCount += len(kept)
 		fresh = append(fresh, it)
 	}
-	fmt.Fprintf(os.Stderr, "снимок %s: в базе %d, новых %d, исправлено %d\n",
+	fmt.Fprintf(os.Stderr, "baseline %s: known %d, new %d, fixed %d\n",
 		o.baseline, base.Size(), newCount, base.Fixed())
 	exit := 0
 	if newCount > 0 {

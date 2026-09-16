@@ -28,11 +28,11 @@ var humanZeroShare = []struct {
 func band(v int, t Thresholds) string {
 	switch {
 	case v >= t.BandClean:
-		return "чисто"
+		return "clean"
 	case v >= t.BandEdit:
-		return "правка"
+		return "edit"
 	default:
-		return "рерайт"
+		return "rewrite"
 	}
 }
 
@@ -59,12 +59,12 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 	// 1. Фразовые хард-баны, кроме тире: однозначные AI-обороты, дорого.
 	hardPhrase := 0
 	for _, h := range r.HardBans {
-		if h.Marker != "Длинное тире" {
+		if h.Marker != "Em dash" {
 			hardPhrase += h.Count
 		}
 	}
 	if hardPhrase > 0 {
-		add(fmt.Sprintf("хард-баны (фразы): %d", hardPhrase), min(45, 12*hardPhrase))
+		add(fmt.Sprintf("hard bans (phrases): %d", hardPhrase), min(45, 12*hardPhrase))
 	}
 
 	// 2. Артефакты копипасты: текст буквально вставлен из ответа чат-бота.
@@ -75,7 +75,7 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 		}
 	}
 	if copyPaste > 0 {
-		add(fmt.Sprintf("артефакты копипасты: %d", copyPaste), 60)
+		add(fmt.Sprintf("copy-paste artifacts: %d", copyPaste), 60)
 	}
 
 	// 3. Мягкие маркеры по плотности на 100 слов.
@@ -87,7 +87,7 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 	}
 	if soft > 0 {
 		if pen := min(30, roundInt(2*per100(soft, words))); pen > 0 {
-			add(fmt.Sprintf("маркеры: %d (%.1f/100 слов)", soft, per100(soft, words)), pen)
+			add(fmt.Sprintf("markers: %d (%.1f/100 words)", soft, per100(soft, words)), pen)
 		}
 	}
 
@@ -98,7 +98,7 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 	}
 	if dashDensity > 2.0 {
 		if pen := min(8, roundInt(3*(dashDensity-2.0))); pen > 0 {
-			add(fmt.Sprintf("тире: %d (%.1f/100 слов)", r.Rhythm.EmDash, dashDensity), pen)
+			add(fmt.Sprintf("dashes: %d (%.1f/100 words)", r.Rhythm.EmDash, dashDensity), pen)
 		}
 	}
 
@@ -106,7 +106,7 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 	if target := rs.CVTarget(r.Genre); r.Rhythm.Sentences >= 4 && r.Rhythm.CVLen < target {
 		pen := min(20, roundInt((target-r.Rhythm.CVLen)/target*30))
 		if pen > 0 {
-			add(fmt.Sprintf("ровный ритм (CV=%.3f, цель ≥%.2f)", r.Rhythm.CVLen, target), pen)
+			add(fmt.Sprintf("flat rhythm (CV=%.3f, target ≥%.2f)", r.Rhythm.CVLen, target), pen)
 		}
 	}
 
@@ -115,7 +115,7 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 	if r.Morph.Per100 > t.NominalTarget {
 		pen := min(8, roundInt((r.Morph.Per100-t.NominalTarget)/1.5*3))
 		if pen > 0 {
-			add(fmt.Sprintf("номинальность (отглагольных сущ. %.1f/100 слов, цель ≤%.1f)",
+			add(fmt.Sprintf("nominalization (verbal nouns %.1f/100 words, target ≤%.1f)",
 				r.Morph.Per100, t.NominalTarget), pen)
 		}
 	}
@@ -125,7 +125,7 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 	if st.Paragraphs >= t.ParaMinCount && st.ParaCV < t.ParaCVAI {
 		pen := min(10, roundInt((t.ParaCVAI-st.ParaCV)/t.ParaCVAI*20))
 		if pen > 0 {
-			add(fmt.Sprintf("ровные абзацы (CV=%.3f, цель ≥%.2f)", st.ParaCV, t.ParaCVAI), pen)
+			add(fmt.Sprintf("flat paragraphs (CV=%.3f, target ≥%.2f)", st.ParaCV, t.ParaCVAI), pen)
 		}
 	}
 
@@ -133,7 +133,7 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 	if st.ListItems >= t.ListicleMinItems && st.ListicleShare > t.ListicleShareAI {
 		pen := min(12, roundInt((st.ListicleShare-t.ListicleShareAI)*30))
 		if pen > 0 {
-			add(fmt.Sprintf("листикл (%d пунктов, %d%% строк)",
+			add(fmt.Sprintf("listicle (%d items, %d%% of lines)",
 				st.ListItems, int(st.ListicleShare*100)), pen)
 		}
 	}
@@ -149,8 +149,8 @@ func cleanliness(rs *RuleSet, r Report, dashMuted bool) Score {
 			}
 		}
 		s.Notes = append(s.Notes, fmt.Sprintf(
-			"стерильно: ни одного маркера. Так пишет %.0f%% людей на тексте в %d слов, "+
-				"остальные %.0f%% что-нибудь да используют. Цель не ноль, а типичная частота",
+			"sterile: zero markers. %.0f%% of people write like that at %d words, "+
+				"the other %.0f%% use at least one. The target isn't zero, it's a typical rate",
 			share, r.Rhythm.Words, 100-share))
 	}
 
@@ -172,20 +172,20 @@ func MarkerVerdict(rs *RuleSet, hits []Hit, words int) string {
 	total := 0
 	for _, h := range hits {
 		if h.Category == rs.CopyPasteCategory {
-			return "артефакты копипасты из чат-бота — текст вставлен из ответа ИИ"
+			return "chatbot copy-paste artifacts - text pasted from an AI reply"
 		}
 		total += h.Count
 	}
 	if total == 0 {
-		return "0 — ни одного"
+		return "0 - none"
 	}
 	d := per100(total, words)
 	switch {
 	case d < 1.0:
-		return fmt.Sprintf("%d (%.1f на 100 слов) — в пределах обычного", total, d)
+		return fmt.Sprintf("%d (%.1f per 100 words) - within normal range", total, d)
 	case d < 3.0:
-		return fmt.Sprintf("%d (%.1f на 100 слов) — плотность повышена, стоит посмотреть", total, d)
+		return fmt.Sprintf("%d (%.1f per 100 words) - density is elevated, worth a look", total, d)
 	default:
-		return fmt.Sprintf("%d (%.1f на 100 слов) — плотность высокая, текст просится на правку", total, d)
+		return fmt.Sprintf("%d (%.1f per 100 words) - density is high, text needs editing", total, d)
 	}
 }

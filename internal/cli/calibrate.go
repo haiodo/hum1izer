@@ -13,31 +13,32 @@ import (
 	"github.com/haiodo/hum1izer/internal/config"
 )
 
-const calibrateUsage = `hum1izer calibrate - подобрать пределы под этот репозиторий.
+const calibrateUsage = `hum1izer calibrate - tune thresholds for this repo.
 
-  hum1izer calibrate [путь]        показать разброс и цену каждого предела
-  hum1izer calibrate --write ...   записать выбранное в .hum1izer.yaml
+  hum1izer calibrate [path]        show the spread and cost of each threshold
+  hum1izer calibrate --write ...   write the chosen values to .hum1izer.yaml
 
-  --max-lines N  какой предел строк записать
-  --max-line N   какой предел длины строки записать
-  --write        записать; без него только показ
+  --max-lines N  which line threshold to write
+  --max-line N   which line length threshold to write
+  --write        write; without it, only shows
 
-Нормы длины комментария у проектов разные: в ядре Linux блок на десяток строк
-перед функцией - документация, в вебе тот же блок - слоп. Разброс по репозиторию
-показывает, что здесь принято, а решение остаётся за человеком.
+Comment length norms differ across projects: in the Linux kernel a ten-line
+block before a function is documentation, on the web the same block is slop.
+The spread across the repo shows what's normal here, the decision stays with
+the human.
 
-Калибруются только структурные пределы. Словарные правила не калибруются: они
-ловят отклонение от человеческой нормы, и подгонка под репозиторий, полный
-машинного текста, просто узаконила бы его.
+Only structural thresholds are calibrated. Wordlist rules aren't: they catch
+deviation from human norms, and tuning them to a repo full of machine-written
+text would just legitimize it.
 `
 
 func runCalibrate(args []string) int {
 	fs := flag.NewFlagSet("calibrate", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, calibrateUsage) }
-	write := fs.Bool("write", false, "записать выбранные пределы в .hum1izer.yaml")
-	wantLines := fs.Int("max-lines", 0, "какой предел строк записать")
-	wantLine := fs.Int("max-line", 0, "какой предел длины строки записать")
-	cfgPath := fs.String("config", "", "файл настроек вместо поиска .hum1izer.yaml")
+	write := fs.Bool("write", false, "write the chosen thresholds to .hum1izer.yaml")
+	wantLines := fs.Int("max-lines", 0, "which line threshold to write")
+	wantLine := fs.Int("max-line", 0, "which line length threshold to write")
+	cfgPath := fs.String("config", "", "settings file instead of looking up .hum1izer.yaml")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -47,7 +48,7 @@ func runCalibrate(args []string) int {
 	}
 	cfg, err := loadConfig(*cfgPath, false, root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "настройки: %v\n", err)
+		fmt.Fprintf(os.Stderr, "settings: %v\n", err)
 		return 2
 	}
 
@@ -62,7 +63,7 @@ func runCalibrate(args []string) int {
 	}
 	prose, long, files := shapes(paths)
 	if len(prose) == 0 {
-		fmt.Println("комментариев не найдено")
+		fmt.Println("no comments found")
 		return 0
 	}
 	report(cfg, prose, long, files)
@@ -123,24 +124,24 @@ func shapes(paths []string) (prose, long []int, files int) {
 
 func report(cfg config.Config, prose, long []int, files int) {
 	n := len(prose)
-	fmt.Printf("комментариев: %d, файлов: %d\n", n, files)
+	fmt.Printf("comments: %d, files: %d\n", n, files)
 
-	fmt.Println("\nстрок прозы в комментарии")
+	fmt.Println("\nprose lines per comment")
 	hist(prose, []int{1, 2, 3, 5, 10, 20})
-	fmt.Printf("  медиана %d, p90 %d, p95 %d, p99 %d, максимум %d\n",
+	fmt.Printf("  median %d, p90 %d, p95 %d, p99 %d, max %d\n",
 		pct(prose, 50), pct(prose, 90), pct(prose, 95), pct(prose, 99), prose[n-1])
 
-	fmt.Println("\nцена предела max_lines")
+	fmt.Println("\ncost of the max_lines threshold")
 	cost(prose, []int{1, 2, 3, 5, 10, 20}, cur(cfg.Comments.MaxLines, 2))
 
-	fmt.Println("\nдлина строки комментария")
-	fmt.Printf("  медиана %d, p90 %d, p95 %d, p99 %d, максимум %d\n",
+	fmt.Println("\ncomment line length")
+	fmt.Printf("  median %d, p90 %d, p95 %d, p99 %d, max %d\n",
 		pct(long, 50), pct(long, 90), pct(long, 95), pct(long, 99), long[len(long)-1])
-	fmt.Println("\nцена предела max_line")
+	fmt.Println("\ncost of the max_line threshold")
 	cost(long, []int{60, 80, 100, 120, 160}, cur(cfg.Comments.MaxLine, 100))
 
-	fmt.Printf("\nпредложение: max_lines %d (p90), max_line %d (p95)\n", pct(prose, 90), pct(long, 95))
-	fmt.Printf("записать: hum1izer calibrate --write --max-lines %d --max-line %d\n",
+	fmt.Printf("\nsuggestion: max_lines %d (p90), max_line %d (p95)\n", pct(prose, 90), pct(long, 95))
+	fmt.Printf("write: hum1izer calibrate --write --max-lines %d --max-line %d\n",
 		pct(prose, 90), pct(long, 95))
 }
 
@@ -167,7 +168,7 @@ func cost(sorted []int, limits []int, current int) {
 		over := n - upTo(sorted, l)
 		mark := ""
 		if l == current {
-			mark = "  <- сейчас"
+			mark = "  <- current"
 		}
 		fmt.Printf("  %4d  %7d  %5.1f%%%s\n", l, over, float64(over)*100/float64(n), mark)
 	}
@@ -200,7 +201,7 @@ func cur(v *int, def int) int {
 
 func writeLimits(cfg config.Config, lines, line int) int {
 	if cfg.Path == "" {
-		fmt.Fprintln(os.Stderr, "настроек нет, создай их: hum1izer init")
+		fmt.Fprintln(os.Stderr, "no settings, create them: hum1izer init")
 		return 2
 	}
 	kv := map[string]any{}
@@ -211,13 +212,13 @@ func writeLimits(cfg config.Config, lines, line int) int {
 		kv["comments.max_line"] = line
 	}
 	if len(kv) == 0 {
-		fmt.Fprintln(os.Stderr, "нечего писать: укажи --max-lines или --max-line")
+		fmt.Fprintln(os.Stderr, "nothing to write: give --max-lines or --max-line")
 		return 2
 	}
 	if err := config.Patch(cfg.Path, kv); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	fmt.Printf("записано в %s: %v\n", cfg.Path, kv)
+	fmt.Printf("written to %s: %v\n", cfg.Path, kv)
 	return 0
 }

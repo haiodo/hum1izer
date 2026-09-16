@@ -1,39 +1,42 @@
-# Настройки hum1izer для этого проекта.
-# Файл ищется от проверяемого каталога вверх до корня, флаги его перекрывают.
+# hum1izer settings for this project.
+# The file is looked up from the checked directory up to the root, flags override it.
 
 version: 1
 
 comments:
-  # Комментарий длиннее скольких строк считать находкой. 0 отключает проверку.
+  # Comment longer than this many lines counts as a finding. 0 disables the check.
   max_lines: 2
-  # Сколько последних коммитов проверять, когда сканируется git-репозиторий.
+  # How many recent commits to check when scanning a git repo.
   commits: 20
   skip_tests: false
 
 languages:
-  # Найдено в проекте: go (14)
-  # only - белый список, пусто означает все поддерживаемые.
+  # Found in project: go (58), js (1), ts (1)
+  # only - allowlist, empty means all supported.
   only: []
   ignore: []
 
-# Пути, которые не сканировать. ** проходит через каталоги, * внутри сегмента.
-# node_modules, vendor, dist, gen и сгенерированные файлы пропускаются и так.
-# В тестах лежат нарочно плохие примеры, сканировать их незачем.
+# Paths to skip scanning. ** crosses directories, * stays within a segment.
+# node_modules, vendor, dist, gen and generated files are skipped by default.
+# Tests hold deliberately bad samples, no point scanning them.
 exclude:
   - "**/*_test.go"
 
-# Снимок находок: прогон ругается только на то, чего в нём нет.
+# Baseline of known findings. Without this line, a run without --baseline
+# won't read it, and blocks deferred via fix --keep resurface again.
 baseline: .hum1izer-baseline
 
 rules:
-  # only - белый список, пусто означает все. Имя берётся из отчёта: подходит
-  # и имя правила, и имя категории целиком.
+  # only - allowlist, empty means all. Name comes from the report: both a
+  # rule name and a whole category name work.
   only: []
   disable: []
 
-# Чаще всего в этом проекте срабатывает:
-#      1  TODO без владельца
-#      1  Данный/Данная/Данное
-#      1  латиница внутри кириллического слова
+# Fires most often in this project:
+#      7  Long comment
+#      2  temporary / for now / will be removed (ru)
+#      1  TODO with no owner
+#      1  hopefully / not sure why / for some reason (ru)
+#      1  не только
 #      1  является
-# Если что-то из этого для проекта норма, перенеси имя в rules.disable.
+# If any of this is normal for the project, move the name to rules.disable.

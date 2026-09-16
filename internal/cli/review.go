@@ -107,8 +107,8 @@ func (m tuiModel) reviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Просим другой вариант, показав прошлый: без него модель повторяет
 		// тот же ответ слово в слово.
 		req := m.rewriteRequest(it)
-		req.Note = "Вот прошлый вариант, он не подошёл:\n" + m.suggest[mark(it)] +
-			"\nДай другой: та же мысль, другие слова."
+		req.Note = "Here's the previous version, it didn't work:\n" + m.suggest[mark(it)] +
+			"\nGive another one: same idea, different words."
 		key := mark(it)
 		client := m.llm
 		delete(m.suggest, key)

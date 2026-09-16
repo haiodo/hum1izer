@@ -21,7 +21,7 @@ func Patch(path string, kv map[string]any) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return fmt.Errorf("%s: ожидался словарь на верхнем уровне", path)
+		return fmt.Errorf("%s: expected a mapping at the top level", path)
 	}
 
 	for key, val := range kv {
@@ -44,7 +44,7 @@ func Patch(path string, kv map[string]any) error {
 
 func setPath(m *yaml.Node, keys []string, val any) error {
 	if len(keys) == 0 {
-		return errors.New("пустой путь")
+		return errors.New("empty path")
 	}
 	child := findKey(m, keys[0])
 	if len(keys) == 1 {
@@ -60,7 +60,7 @@ func setPath(m *yaml.Node, keys []string, val any) error {
 		m.Content = append(m.Content, scalar(keys[0]), child)
 	}
 	if child.Kind != yaml.MappingNode {
-		return fmt.Errorf("%q не словарь", keys[0])
+		return fmt.Errorf("%q is not a mapping", keys[0])
 	}
 	return setPath(child, keys[1:], val)
 }

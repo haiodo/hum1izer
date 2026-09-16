@@ -23,10 +23,10 @@ import (
 
 const releasesAPI = "https://api.github.com/repos/haiodo/hum1izer/releases/latest"
 
-const upgradeUsage = `hum1izer upgrade - обновиться до последнего релиза с GitHub.
+const upgradeUsage = `hum1izer upgrade - upgrade to the latest GitHub release.
 
-  --check  только сказать, есть ли новая версия
-  --force  поставить, даже если версия совпадает
+  --check  only say whether a new version is available
+  --force  install even if the version matches
 `
 
 type release struct {
@@ -40,15 +40,15 @@ type release struct {
 func runUpgrade(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, upgradeUsage) }
-	check := fs.Bool("check", false, "только проверить наличие новой версии")
-	force := fs.Bool("force", false, "поставить, даже если версия совпадает")
+	check := fs.Bool("check", false, "only check whether a new version is available")
+	force := fs.Bool("force", false, "install even if the version matches")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
 	rel, err := latestRelease()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "не удалось спросить GitHub:", err)
+		fmt.Fprintln(os.Stderr, "failed to query GitHub:", err)
 		return 2
 	}
 	latest := strings.TrimPrefix(rel.Tag, "v")
@@ -57,12 +57,12 @@ func runUpgrade(args []string) int {
 	switch {
 	case *force:
 	case cur == "dev":
-		fmt.Printf("сборка из исходников, последний релиз %s\n", latest)
+		fmt.Printf("built from source, latest release %s\n", latest)
 	case !newer(latest, cur):
-		fmt.Printf("hum1izer %s, новее на GitHub нет\n", cur)
+		fmt.Printf("hum1izer %s, nothing newer on GitHub\n", cur)
 		return 0
 	default:
-		fmt.Printf("есть %s, текущая %s\n", latest, cur)
+		fmt.Printf("%s is available, current %s\n", latest, cur)
 	}
 	if *check {
 		return 0
@@ -78,7 +78,7 @@ func runUpgrade(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	fmt.Printf("поставлено: %s %s\n", exe, latest)
+	fmt.Printf("installed: %s %s\n", exe, latest)
 	return 0
 }
 
@@ -116,7 +116,7 @@ func latestRelease() (*release, error) {
 		return nil, err
 	}
 	if rel.Tag == "" {
-		return nil, fmt.Errorf("в ответе нет tag_name")
+		return nil, fmt.Errorf("response has no tag_name")
 	}
 	return &rel, nil
 }
@@ -141,10 +141,10 @@ func downloadBinary(rel *release, version string) ([]byte, error) {
 		}
 	}
 	if assetURL == "" {
-		return nil, fmt.Errorf("в релизе %s нет файла %s - скачай вручную с https://github.com/haiodo/hum1izer/releases", rel.Tag, name)
+		return nil, fmt.Errorf("release %s has no file %s - download it manually from https://github.com/haiodo/hum1izer/releases", rel.Tag, name)
 	}
 	if sumsURL == "" {
-		return nil, fmt.Errorf("в релизе %s нет SHA256SUMS, сверить нечем", rel.Tag)
+		return nil, fmt.Errorf("release %s has no SHA256SUMS, nothing to verify against", rel.Tag)
 	}
 
 	sums, err := fetch(sumsURL)
@@ -153,7 +153,7 @@ func downloadBinary(rel *release, version string) ([]byte, error) {
 	}
 	want := sumFor(sums, name)
 	if want == "" {
-		return nil, fmt.Errorf("в SHA256SUMS нет строки для %s", name)
+		return nil, fmt.Errorf("SHA256SUMS has no line for %s", name)
 	}
 
 	blob, err := fetch(assetURL)
@@ -162,7 +162,7 @@ func downloadBinary(rel *release, version string) ([]byte, error) {
 	}
 	got := sha256.Sum256(blob)
 	if hex.EncodeToString(got[:]) != want {
-		return nil, fmt.Errorf("контрольная сумма %s не сошлась, файл не поставлен", name)
+		return nil, fmt.Errorf("checksum mismatch for %s, file not installed", name)
 	}
 	return unpack(blob, strings.HasSuffix(name, ".zip"))
 }
@@ -199,7 +199,7 @@ func unpack(blob []byte, isZip bool) ([]byte, error) {
 			defer func() { _ = rc.Close() }()
 			return io.ReadAll(io.LimitReader(rc, 200<<20))
 		}
-		return nil, fmt.Errorf("в архиве нет %s", want)
+		return nil, fmt.Errorf("archive has no %s", want)
 	}
 
 	gz, err := gzip.NewReader(bytes.NewReader(blob))
@@ -220,7 +220,7 @@ func unpack(blob []byte, isZip bool) ([]byte, error) {
 			return io.ReadAll(io.LimitReader(tr, 200<<20))
 		}
 	}
-	return nil, fmt.Errorf("в архиве нет %s", want)
+	return nil, fmt.Errorf("archive has no %s", want)
 }
 
 // replaceSelf кладёт новый бинарник рядом со старым и переименовывает поверх:
@@ -236,7 +236,7 @@ func replaceSelf(bin []byte) (string, error) {
 
 	tmp, err := os.CreateTemp(filepath.Dir(exe), ".hum1izer-new-*")
 	if err != nil {
-		return "", fmt.Errorf("нет прав на запись в %s: %w", filepath.Dir(exe), err)
+		return "", fmt.Errorf("no write permission in %s: %w", filepath.Dir(exe), err)
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
 	if _, err := tmp.Write(bin); err != nil {
@@ -263,7 +263,7 @@ func replaceSelf(bin []byte) (string, error) {
 			// Иначе на месте бинарника не останется ничего, кроме .old.
 			_ = os.Rename(exe+".old", exe)
 		}
-		return "", fmt.Errorf("не удалось заменить %s: %w", exe, err)
+		return "", fmt.Errorf("failed to replace %s: %w", exe, err)
 	}
 	return exe, nil
 }

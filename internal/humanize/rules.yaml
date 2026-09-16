@@ -48,93 +48,93 @@ freq_bans:
 
 hard_bans:
   - name: Не просто X, а Y
-    fix: 'Прямое утверждение: оставь только Y'
+    fix: 'State the claim directly: keep only Y'
     lift: 8.3
     re: 'не\s+просто[^.!?]{1,40}?[^\p{L}]а[^\p{L}]'
   - name: Не только X, но и Y
-    fix: '"X. И ещё Y" или обычное перечисление'
+    fix: '"X. And Y" or a plain list'
     lift: 4.1
     re: 'не\s+только[^.!?]{1,40}?но\s+и[^\p{L}]'
   - name: В современном мире
-    fix: Начни с факта или вопроса из самого текста
+    fix: Start with a fact or question from the text itself
     word_re: 'в\s+современном\s+мире'
     tests: [{text: "В современном мире данные решают", expect: true}, {text: "в современных реалиях", expect: false}]
   - name: Стоит отметить, что
-    fix: Убери подводку, оставь утверждение
+    fix: Drop the lead-in, keep the claim
     lift: 2.5
     word_re: 'стоит\s+отметить'
   - name: Важно понимать/помнить/отметить, что
-    fix: Убери подводку, оставь утверждение
+    fix: Drop the lead-in, keep the claim
     lift: 15.1
     word_re: 'важно\s+(?:понимать|помнить|отметить)'
     tests: [{text: "Важно понимать, что кэш не мгновенный", expect: true}, {text: "неважно понимать, что там", expect: false}]
   # Только единственное число: «данные» — это существительное, а не маркер.
   - name: Данный/Данная/Данное
-    fix: Этот / эта / это
+    fix: Replace with этот / эта / это
     lift: 2.2
     word_re: 'данн(?:ый|ая|ое|ого|ой|ом|ую)'
     tests: [{text: "В данном случае ответ кэшируется", expect: true}, {text: "данные загружаются из API", expect: false}]
   - name: Является
-    fix: Перестрой предложение без связки
+    fix: Restructure the sentence to drop the copula
     lift: 2.5
     word_re: 'явля(?:ется|ются)'
     tests: [{text: "Слой является тонкой обёрткой", expect: true}, {text: "Проблема проявляется только на Windows", expect: false}]
   - name: Играет важную/ключевую роль
-    fix: Оставь только то, ПОЧЕМУ важно, если это есть в тексте
+    fix: Keep only WHY it matters, if the text says so
     lift: 9.4  # замер humanizer-ru, своего нет
     word_re: 'игра(?:ет|ют)\s+(?:важн[\p{L}]+|ключев[\p{L}]+)\s+роль'
   - name: Можно с уверенностью сказать
-    fix: Скажи без преамбулы
+    fix: Say it without the preamble
     word_re: 'можно\s+с\s+уверенностью\s+сказать'
   # «Таким образом» банится только как вводный коннектор-вывод. Омонимичное
   # обстоятельство «устроен таким образом, что» — живая речь, под бан не идёт.
   - name: Подводя итог / Таким образом
-    fix: 'Убери или начни вывод с действия. "Устроен таким образом, что" не маркер'
+    fix: 'Cut it, or open the conclusion with an action. "Устроен таким образом, что" is not a marker'
     lift: 4.3
     re: '(?:(?:^|[^\p{L}\p{N}_])подводя\s+итог(?:[^\p{L}\p{N}_]|$))|(?:(?:^|[.!?…:;]\s+|\n\s*(?:[-*•]\s*)?|,\s*)таким\s+образом\s*,)'
-  - name: Длинное тире
-    fix: Запятая, двоеточие, точка, дефис или перестройка фразы
+  - name: Em dash
+    fix: Use a comma, colon, period, or hyphen; or restructure the sentence
     re: '—'
     tests: [{text: "Кэш — не серебряная пуля", expect: true}, {text: "Кэш: не серебряная пуля", expect: false}]
-  - name: Короткое тире
-    fix: В русской типографике законно только в числовых диапазонах
+  - name: En dash
+    fix: Legitimate in Russian typography only for numeric ranges
     builtin: en_dash
     tests: [{text: "заметки–наброски", expect: true}, {text: "2019–2024", expect: false}]
   - name: от X до Y (ложный диапазон)
-    fix: Перечисли конкретно или убери
+    fix: List specifics, or cut it
     lift: 2.1
     builtin: fake_range
     tests: [{text: "от простого до сложного", expect: true}, {text: "от Москвы до Твери", expect: false}]
   - name: В условиях [прил.] [сущ.]
-    fix: Начни с факта из самого текста
+    fix: Start with a fact from the text itself
     lift: 3.7
     word_re: 'в\s+условиях\s+[\p{L}]+'
   - name: Погрузимся / посмотрим поближе
-    fix: Удали анонс, сразу пиши суть
+    fix: Cut the announcement, get straight to the point
     word_re: '(?:погрузимся|посмотрим\s+[\p{L}]+\s+поближе|давайте\s+посмотрим)'
   - name: И вот здесь начинается самое интересное
-    fix: Удали анонс, сразу пиши суть
+    fix: Cut the announcement, get straight to the point
     word_re: 'вот\s+(?:здесь|тут)\s+начинается\s+самое\s+интересное'
   - name: Раскрыть потенциал
-    fix: Конкретный результат, если он назван в тексте; иначе удали
+    fix: Name the concrete result if the text gives one; otherwise cut it
     word_re: 'раскры(?:ть|ва[\p{L}]+)\s+потенциал'
   - name: Вывести на новый уровень
-    fix: Конкретный результат, если он назван в тексте; иначе удали
+    fix: Name the concrete result if the text gives one; otherwise cut it
     word_re: 'выв(?:ести|одит)\s+на\s+новый\s+уровень'
   - name: Комплексный подход/решение
-    fix: Перечисли, что входит; иначе удали
+    fix: List what it includes; otherwise cut it
     lift: 2.8  # замер humanizer-ru, своего нет
     word_re: 'комплексн(?:ый|ое|ого|ым)\s+(?:подход[\p{L}]*|решени[\p{L}]+)'
   - name: В связи с этим
-    fix: Убери или покажи связь словами исходника
+    fix: Cut it, or show the link using the source's own words
     word_re: 'в\s+связи\s+с\s+этим'
   - name: Открывает новые горизонты/перспективы/возможности
-    fix: Конкретный результат, если он назван; иначе удали
+    fix: Name the concrete result if one is given; otherwise cut it
     word_re: 'открыва(?:ет|ют)\s+новые\s+(?:горизонт|перспектив|возможност)[\p{L}]+'
 
 categories:
-  - name: Канцелярит
-    fix: 'Отглагольное существительное разверни в глагол: «осуществить установку» → «установить»'
+  - name: Bureaucratese
+    fix: 'Turn the nominalization into a verb: "осуществить установку" -> "установить"'
     lift: 2.8
     rules:
       - lit: осуществлени
@@ -154,8 +154,8 @@ categories:
       - name: посвящена анализу/изучению/разработке
         re: 'посвящен[ао]\s+(?:анализ|изучени|разработк|рассмотрени)[\p{L}]+'
 
-  - name: Кальки
-    fix: 'Скажи по-русски: связка-калька обычно снимается без потери смысла'
+  - name: Calques
+    fix: 'Rephrase in natural Russian: the calque usually drops with no loss of meaning'
     lift: 2.2
     rules:
       - name: является
@@ -174,8 +174,8 @@ categories:
       - name: исследование фокусируется на
         re: '(?:исследовани|работ|стать)[\p{L}]+\s+фокусиру[\p{L}]+\s+на'
 
-  - name: Раздувание
-    fix: Убери усилитель или замени его тем, что конкретно изменилось
+  - name: Empty intensifiers
+    fix: Cut the intensifier, or replace it with what specifically changed
     lift: 1.9
     rules:
       - lit: ключев
@@ -190,8 +190,8 @@ categories:
       - name: важный шаг
         word_re: 'важн[\p{L}]+\s+шаг[\p{L}]*'
 
-  - name: Формула-выводы
-    fix: Убери формулу вывода, начни вывод с действия или факта
+  - name: Conclusion formulas
+    fix: Cut the conclusion formula; open the conclusion with an action or a fact
     lift: 6.4
     rules:
       - name: таким образом, (вводное)
@@ -202,8 +202,8 @@ categories:
       - lit: суммируя вышесказанное
       - lit: на основании вышеизложенного
 
-  - name: Чатбот
-    fix: Артефакт диалога с ассистентом, удали целиком
+  - name: Chatbot artifacts
+    fix: 'Chat-assistant artifact: delete it entirely'
     lift: 1.6
     rules:
       - lit: 'конечно!'
@@ -216,8 +216,8 @@ categories:
 
   # «это не X, это Y» — конструкция, а не любое отрицание: «это не может не
   # радовать» живая речь и маркером не считается.
-  - name: Параллелизмы
-    fix: Пустое противопоставление снимается прямым утверждением
+  - name: Parallelisms
+    fix: Replace the empty contrast with a direct statement
     lift: 2.7
     rules:
       - lit: не просто
@@ -226,8 +226,8 @@ categories:
         re: 'это\s+не\s+[^.!?\n]{1,40}[,—:-]\s*это(?:[^\p{L}\p{N}_]|$)'
         tests: [{text: "Это не баг, это фича", expect: true}, {text: "это не просто баг", expect: false}]
 
-  - name: Вводные-открытия
-    fix: Начни с факта или вопроса из самого текста
+  - name: Opening hooks
+    fix: Start with a fact or question from the text itself
     lift: 3.2
     rules:
       - lit: в современном мире
@@ -239,8 +239,8 @@ categories:
       - lit: по мнению экспертов
       - lit: специалисты отмечают
 
-  - name: Модальные хеджи
-    fix: Либо назови условие, при котором это работает, либо убери оборот
+  - name: Modal hedges
+    fix: Either name the condition it works under, or cut the phrase
     lift: 2.7
     rules:
       - lit: может стать
@@ -250,8 +250,8 @@ categories:
       - lit: призван решить
       - lit: позволяет достичь
 
-  - name: Мотивационные клише
-    fix: Конкретный результат, если он назван в тексте; иначе удали
+  - name: Motivational cliches
+    fix: Name the concrete result if the text gives one; otherwise cut it
     lift: 4.0  # замер humanizer-ru, своего нет
     rules:
       - lit: раскрыть потенциал
@@ -262,8 +262,8 @@ categories:
       - lit: расширить границы
       - lit: комплексный подход
 
-  - name: Контекстуализаторы
-    fix: 'Убери подводку: факт работает и без рамки'
+  - name: Contextualizers
+    fix: 'Cut the lead-in: the fact stands on its own'
     lift: 1.8
     rules:
       - lit: в условиях
@@ -274,8 +274,8 @@ categories:
       - lit: принимая во внимание
       - lit: в связи с этим
 
-  - name: Маркетинговые штампы
-    fix: Замени на то, что конкретно делается
+  - name: Marketing cliches
+    fix: Replace with what actually happens
     rules:
       - lit: связь с аудиторией
       - lit: доверительные отношения
@@ -284,15 +284,15 @@ categories:
       - lit: индивидуальный подход
       - lit: инновационное решение
 
-  - name: Псевдо-сократические
-    fix: Убери риторический вопрос, оставь ответ
+  - name: Pseudo-Socratic
+    fix: Cut the rhetorical question, keep the answer
     rules:
       - lit: 'зачем? потому что'
       - lit: 'и что? а то'
       - lit: 'почему? сейчас расскажу'
 
-  - name: Авторитетные трюизмы
-    fix: Убери формулу важности, оставь само утверждение
+  - name: Authoritative truisms
+    fix: Cut the importance formula, keep the statement itself
     rules:
       - lit: вот ключевой вывод
       - lit: самое важное — это
@@ -303,8 +303,8 @@ categories:
       - lit: в конечном счёте
       - lit: в конечном счете
 
-  - name: Псевдо-терапевтические
-    fix: 'Убери: читатель не просил поддержки'
+  - name: Pseudo-therapeutic
+    fix: "Cut it: the reader didn't ask for reassurance"
     rules:
       - lit: ты не ошибаешься
       - lit: ты имеешь право
@@ -315,8 +315,8 @@ categories:
 
   # Разговорное «честно говоря» и жанровый «честный обзор» сюда не входят:
   # это живая речь и конвенция заголовка, а не самомаркировка.
-  - name: Самомаркировка честности
-    fix: Не обещай честность, покажи факты
+  - name: Honesty self-labeling
+    fix: Don't promise honesty, show the facts
     rules:
       - name: честный список
         word_re: 'честн(?:ый|ого|ому|ым|ом)\s+спис[\p{L}]*'
@@ -334,8 +334,8 @@ categories:
         word_re: 'это\s+не\s+очередн[\p{L}]*'
         tests: [{text: "это не очередной фреймворк", expect: true}, {text: "это не очередь сообщений", expect: false}]
 
-  - name: Эмодзи-декор
-    fix: Удали декоративные эмодзи
+  - name: Emoji decoration
+    fix: Delete decorative emoji
     lift: 10.0
     rules:
       - lit: '⚡'
@@ -345,37 +345,37 @@ categories:
       - lit: '💡'
 
   # Латиница в IT-тексте законна, но кириллицей с двух сторон она не окружена.
-  - name: Технические маркеры
-    fix: 'Подмена символов: восстанови кириллицу, убери невидимые знаки'
+  - name: Technical markers
+    fix: 'Character substitution: restore Cyrillic, strip invisible characters'
     lift: 2.1
     rules:
-      - name: латиница внутри кириллического слова
+      - name: Latin inside a Cyrillic word
         builtin: latin_in_cyrillic
         tests: [{text: "интернеtмагазин", expect: true}, {text: "HTTP-сервер", expect: false}]
-      - name: невидимые символы (zero-width, bidi)
+      - name: invisible characters (zero-width, bidi)
         # Литералы держать нельзя: их не видно в диффе, и GitHub ругается на
         # bidirectional Unicode. ZWSP/ZWNJ/ZWJ, BOM, word joiner, bidi-метки,
         # изоляторы и узкий неразрывный пробел — перечислены кодами.
         re: '[\x{200b}\x{200c}\x{200d}\x{feff}\x{2060}\x{180e}\x{200e}\x{200f}\x{202a}-\x{202e}\x{2066}-\x{2069}\x{061c}\x{202f}]'
         tests: [{text: "скрытый\u200Bсимвол", expect: true}, {text: "обычный текст", expect: false}]
 
-  - name: Неодушевлённый субъект
-    fix: 'Верни действующее лицо: не «работа демонстрирует», а «мы показали»'
+  - name: Inanimate subject
+    fix: 'Bring back an actual agent: not "the paper demonstrates" but "we showed"'
     lift: 2.7  # замер humanizer-ru, своего нет
     rules:
-      - name: предмет или абстракция подчёркивает/демонстрирует
+      - name: abstraction or object as subject
         re: '(?:исследовани|работ[аы]|стать|проект|платформ|систем|решени|компани|здани|документ|отчёт|инициатив|технологи|подход)[\p{L}]*\s+(?:подчёркива|демонстрир|отража|обеспечива|иллюстрир|символизир|подтвержда)[\p{L}]+'
 
-  - name: Триада-отрицание
-    fix: 'Формула "Без X. Без Y. Только Z." — перепиши обычным предложением'
+  - name: Negation triad
+    fix: 'Formula "Без X. Без Y. Только Z." - rewrite it as a plain sentence'
     rules:
       - name: Без X. Без Y. Только Z.
         re: '(?:^|[.!?…\n]\s*)(?:без|ни)\s+[^.!?\n]{1,40}[.!?]\s+(?:без|ни)\s+[^.!?\n]{1,40}[.!?]\s+(?:только|просто|лишь)(?:[^\p{L}\p{N}_]|$)'
 
   # Указательное «этой/сей/эта» обязательно, иначе под маркер уходит разбор
   # басни и оборот «история учит нас осторожности», который человек пишет сам.
-  - name: Финальная мораль
-    fix: 'Убери проговорённую мораль: вывод читатель сделает сам'
+  - name: Closing moral
+    fix: 'Cut the spelled-out moral: let the reader draw the conclusion'
     rules:
       - name: мораль этой истории
         word_re: 'мораль\s+(?:этой|всей\s+этой|сей)\s+истори(?:и|ю|ей)'
@@ -388,8 +388,8 @@ categories:
 
   # Технические следы копирования из интерфейса чат-бота: в человеческом тексте
   # не встречаются, поэтому штраф отдельный и тяжёлый.
-  - name: Артефакты копипасты
-    fix: 'Текст вставлен из ответа чат-бота: вычисти служебную разметку'
+  - name: Copy-paste artifacts
+    fix: 'Text pasted from a chatbot reply: strip the service markup'
     rules:
       - lit: ':contentReference'
       - lit: oai_citation
@@ -411,7 +411,7 @@ categories:
         re: '【\d+(?::\d+)?†source】'
       - name: '[citation:N]'
         re: '\[citation:\d+\]'
-      - name: невидимые разделители цитат
+      - name: invisible citation separators
         re: '[\x{e200}-\x{e204}]'
       - name: <think>
         re: '</?think>'
@@ -423,7 +423,7 @@ categories:
         re: '\[span_\d+\]\(start_span\)'
 
 # Категория, попадания в которую сразу означают вставку из чат-бота.
-copy_paste_category: Артефакты копипасты
+copy_paste_category: Copy-paste artifacts
 
 # Жанровый фильтр: часть банов в отдельных регистрах не признак машины, а норма.
 # Без жанра режим строгий, под него откалиброваны пороги.
@@ -436,13 +436,13 @@ genres:
     cv_human_target: 0.35
     mute_bans:
       - 'Является'
-      - 'Длинное тире'
-      - 'Короткое тире'
+      - 'Em dash'
+      - 'En dash'
       - 'Данный/Данная/Данное'
       - 'В условиях [прил.] [сущ.]'
       - 'Подводя итог / Таким образом'
       - 'В связи с этим'
-    mute_categories: ['Канцелярит', 'Кальки', 'Контекстуализаторы', 'Формула-выводы']
+    mute_categories: ['Bureaucratese', 'Calques', 'Contextualizers', 'Conclusion formulas']
   legal:
     # юридический ещё ровнее: порог CV из voice.toml humanize-text-skill
     cv_human_target: 0.35
@@ -451,29 +451,29 @@ genres:
       - 'Данный/Данная/Данное'
       - 'В условиях [прил.] [сущ.]'
       - 'В связи с этим'
-      - 'Длинное тире'
-      - 'Короткое тире'
-    mute_categories: ['Канцелярит', 'Кальки', 'Контекстуализаторы']
+      - 'Em dash'
+      - 'En dash'
+    mute_categories: ['Bureaucratese', 'Calques', 'Contextualizers']
   fiction:
     # проза рваная по природе: порог CV из voice.toml humanize-text-skill
     cv_human_target: 0.55
     mute_bans:
-      - 'Длинное тире'
-      - 'Короткое тире'
+      - 'Em dash'
+      - 'En dash'
       - 'от X до Y (ложный диапазон)'
       - 'Не только X, но и Y'
       - 'Не просто X, а Y'
-    mute_categories: ['Параллелизмы']
+    mute_categories: ['Parallelisms']
   news:
     # новость - деловой регистр: порог CV из voice.toml humanize-text-skill
     cv_human_target: 0.40
     mute_bans:
       - 'Является'
-      - 'Длинное тире'
-      - 'Короткое тире'
+      - 'Em dash'
+      - 'En dash'
       - 'Данный/Данная/Данное'
       - 'от X до Y (ложный диапазон)'
-    mute_categories: ['Канцелярит', 'Кальки', 'Контекстуализаторы']
+    mute_categories: ['Bureaucratese', 'Calques', 'Contextualizers']
   # Комментарии в коде и сообщения коммитов: прозаические правила те же,
   # специфика вынесена в rules-code.yaml и codecheck.go.
   code:
@@ -482,8 +482,8 @@ genres:
     # Тире в комментариях ловится, но их там столько, что отчёт превращается в
     # список тире. Типографику правь отдельным проходом --genre marketing.
     mute_bans:
-      - 'Длинное тире'
-      - 'Короткое тире'
+      - 'Em dash'
+      - 'En dash'
     mute_categories: []
   commit:
     # сообщение коммита тем более: порог CV из voice.toml humanize-text-skill
