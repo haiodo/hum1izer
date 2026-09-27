@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -67,6 +68,7 @@ Output:
   --langs   only these languages: c, cpp, go, ts, js, svelte, swift, java, kotlin
   --limit N how many blocks to emit, 0 - all. Worst blocks come first
   --top N   how many lines in the summary, 0 - all (default 12)
+  --lines L only blocks touching these lines of the file, e.g. 3-7,12
 
   A directory argument gives a summary by rule, without the findings
   themselves: a tree has thousands of them. Name a file and findings print in
@@ -127,6 +129,7 @@ func Run() int {
 	noConfig := flag.Bool("no-config", false, "ignore .hum1izer.yaml")
 	only := flag.String("only", "", "keep only these rules or categories, comma-separated")
 	langs := flag.String("langs", "", "scan only these languages, comma-separated")
+	lines := flag.String("lines", "", "only blocks touching these lines, e.g. 3-7,12")
 	showVersion := flag.Bool("version", false, "show version")
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	flag.Parse()
@@ -198,7 +201,7 @@ func Run() int {
 		return runCode(flag.Args(), codeOpts{
 			cfg: cfg, rules: *rulesPath, format: *format, top: *top, limit: *limit,
 			commits: *commits, maxLines: *maxLines, maxLine: *maxLine, skipTests: *skipTests,
-			baseline: *basePath, writeBaseline: *writeBase,
+			baseline: *basePath, writeBaseline: *writeBase, lines: *lines,
 		})
 	}
 	return runText(flag.Args(), *rulesPath, *lang, *genre, *format, *top)
@@ -263,6 +266,7 @@ type codeOpts struct {
 	cfg                 config.Config
 	rules, format       string
 	baseline            string
+	lines               string
 	top, limit, commits int
 	maxLines, maxLine   int
 	skipTests           bool
@@ -349,6 +353,13 @@ func runCode(args []string, o codeOpts) int {
 	if exit == 2 && items == nil {
 		return 2
 	}
+	if o.lines != "" {
+		var err error
+		if items, err = touching(items, o.lines); err != nil {
+			fmt.Fprintf(os.Stderr, "--lines: %v\n", err)
+			return 2
+		}
+	}
 
 	if o.baseline != "" {
 		var err error
@@ -382,6 +393,37 @@ func runCode(args []string, o codeOpts) int {
 		printCodeReport(items, files, blocks, o.limit, o.top, allFiles(args))
 	}
 	return exit
+}
+
+// touching оставляет блоки, задевающие хоть одну строку из spec ("3-7,12").
+func touching(items []code.Item, spec string) ([]code.Item, error) {
+	type span struct{ from, to int }
+	var spans []span
+	for _, p := range splitList(spec) {
+		a, b, isRange := strings.Cut(p, "-")
+		from, err := strconv.Atoi(a)
+		if err != nil {
+			return nil, err
+		}
+		to := from
+		if isRange {
+			if to, err = strconv.Atoi(b); err != nil {
+				return nil, err
+			}
+		}
+		spans = append(spans, span{from, to})
+	}
+	var out []code.Item
+	for _, it := range items {
+		end := max(it.End, it.Start)
+		for _, s := range spans {
+			if it.Start <= s.to && s.from <= end {
+				out = append(out, it)
+				break
+			}
+		}
+	}
+	return out, nil
 }
 
 // splitList - список через запятую с обрезкой пробелов и пустых элементов.

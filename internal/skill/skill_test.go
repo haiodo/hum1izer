@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,34 +109,6 @@ func TestInstallHooksPlugins(t *testing.T) {
 		}
 		if !strings.Contains(string(b), "post-edit") {
 			t.Errorf("%s: плагин не зовёт post-edit", rel)
-		}
-	}
-}
-
-func TestInstallHooksZcode(t *testing.T) {
-	dir := t.TempDir()
-	if code := Run([]string{"--zcode", "--hooks", "--dir", dir}, "test"); code != 0 {
-		t.Fatalf("install вернул %d", code)
-	}
-	b, err := os.ReadFile(filepath.Join(dir, ".zcode", "cli", "config.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cfg struct {
-		Hooks struct {
-			Enabled bool                     `json:"enabled"`
-			Events  map[string][]interface{} `json:"events"`
-		} `json:"hooks"`
-	}
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		t.Fatal(err)
-	}
-	if !cfg.Hooks.Enabled {
-		t.Error("hooks.enabled не выставлен, zcode такие хуки не запустит")
-	}
-	for _, e := range []string{"SessionStart", "PostToolUse"} {
-		if len(cfg.Hooks.Events[e]) != 1 {
-			t.Errorf("hooks.events.%s: %d групп, ожидалась одна", e, len(cfg.Hooks.Events[e]))
 		}
 	}
 }

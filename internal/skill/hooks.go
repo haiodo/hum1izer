@@ -19,7 +19,7 @@ type hookSpec struct {
 var hookSpecs = []hookSpec{
 	{event: "SessionStart", matcher: "startup|resume|clear", args: "hook session-start"},
 	// Матчер - регулярка по имени инструмента, а имена у агентов разные:
-	// Claude Code и ZCode правят файл через Edit и Write, Codex - через apply_patch.
+	// Claude Code правит файл через Edit и Write, Codex - через apply_patch.
 	{event: "PostToolUse", matcher: "Edit|Write|apply_patch", args: "hook post-edit"},
 }
 
@@ -29,14 +29,11 @@ type hookTarget struct {
 	flag   string
 	file   string   // относительно домашнего каталога
 	at     []string // ключи до карты событий внутри JSON
-	enable []string // ключ, которым агент включает хуки, если требует этого явно
 	plugin string   // имя файла в plugins/
 }
 
 var hookTargets = []hookTarget{
 	{flag: "claude", file: ".claude/settings.json", at: []string{"hooks"}},
-	{flag: "zcode", file: ".zcode/cli/config.json", at: []string{"hooks", "events"},
-		enable: []string{"hooks", "enabled"}},
 	{flag: "codex", file: ".codex/hooks.json", at: []string{"hooks"}},
 	{flag: "opencode", file: ".config/opencode/plugin/hum1izer.js", plugin: "opencode.js"},
 	{flag: "pi", file: ".pi/agent/extensions/hum1izer.ts", plugin: "pi.ts"},
@@ -133,10 +130,6 @@ func writeHookSettings(t hookTarget, path string, force bool) error {
 	if added == 0 {
 		fmt.Printf("  = %-10s hooks already installed: %s (--force overwrites)\n", t.flag, path)
 		return nil
-	}
-	if len(t.enable) > 0 {
-		last := len(t.enable) - 1
-		dig(root, t.enable[:last])[t.enable[last]] = true
 	}
 
 	out, err := json.MarshalIndent(root, "", "  ")

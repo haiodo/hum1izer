@@ -50,11 +50,6 @@ description: "` + description + `"
 user-invocable: true
 license: MIT
 ---`},
-	{Flag: "zcode", Agent: "ZCode", Dir: ".zcode/skills/" + name, frontMatter: `---
-name: ` + name + `
-description: "` + description + `"
-license: MIT
----`},
 	{Flag: "codex", Agent: "Codex", Dir: ".codex/skills/" + name, frontMatter: `---
 name: ` + name + `
 description: "` + description + `"
@@ -98,7 +93,6 @@ const usage = `hum1izer install - install the skill for an agent.
 
 Agents:
   --claude   ~/.claude/skills/hum1izer/SKILL.md
-  --zcode    ~/.zcode/skills/hum1izer/SKILL.md
   --codex    ~/.codex/skills/hum1izer/SKILL.md
   --opencode ~/.config/opencode/skill/hum1izer/SKILL.md
   --hermes   ~/.hermes/skills/devops/hum1izer/SKILL.md
@@ -111,8 +105,8 @@ Other:
   --dir D    root instead of the home directory
   --force    overwrite if the file already exists
   --hooks    install hooks for the selected agents: rules at session start and
-             a check right after editing a file. Claude Code, ZCode and Codex
-             get them in settings, opencode and pi as a plugin
+             a check right after editing a file. Claude Code and Codex get
+             them in settings, opencode and pi as a plugin
   --print    print SKILL.md to stdout
   --repo     print SKILL.md for the repo root (make skill)
 `

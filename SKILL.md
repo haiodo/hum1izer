@@ -99,17 +99,18 @@ a side effect of an edit.
 ## Hooks: the check runs itself
 
 ```bash
-hum1izer install --claude --hooks    # or --zcode, --codex, --opencode, --pi, --all
+hum1izer install --claude --hooks    # or --codex, --opencode, --pi, --all
 ```
 
 Two things get wired, whatever the agent:
 
 - **At the start of a session** the rules above land in the model's context, so
   comments come out right the first time instead of being fixed afterwards.
-- **After every file edit** the check runs on that one file and reports back
-  only when something is found.
+- **After every file edit** the check runs on the lines of that file changed
+  against HEAD (an untracked file is checked whole) and reports back only when
+  something is found. Old findings elsewhere in the file stay out of it.
 
-Claude Code, ZCode and Codex take them as hooks in their settings; opencode and
+Claude Code and Codex take them as hooks in their settings; opencode and
 pi get a small plugin file that calls the same two commands. `--dir .` puts everything
 in the project instead of the home directory.
 

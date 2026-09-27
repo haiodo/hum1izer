@@ -73,13 +73,13 @@ make skills                         # собрать и поставить вс�
 
 `--hooks` wires the same two things for every agent that can take them: the
 rule sheet at the start of a session, and a check of the file the agent has just
-edited. Only that file is checked, never the tree, and it stays quiet when there
-is nothing.
+edited. Only the lines of that file changed against HEAD are checked (an
+untracked file - whole), never the tree, and it stays quiet when there is
+nothing.
 
 | Agent | What `--hooks` writes |
 |---|---|
 | `--claude` | `~/.claude/settings.json`, keys `hooks.SessionStart` and `hooks.PostToolUse` |
-| `--zcode` | `~/.zcode/cli/config.json`, keys `hooks.events.*` plus `hooks.enabled` |
 | `--codex` | `~/.codex/hooks.json`, the same event format |
 | `--opencode` | plugin `~/.config/opencode/plugin/hum1izer.js` |
 | `--pi` | extension `~/.pi/agent/extensions/hum1izer.ts` |
@@ -93,7 +93,6 @@ header and the path differ:
 | Flag | Where |
 |---|---|
 | `--claude` | `~/.claude/skills/hum1izer/SKILL.md` |
-| `--zcode` | `~/.zcode/skills/hum1izer/SKILL.md` |
 | `--codex` | `~/.codex/skills/hum1izer/SKILL.md` |
 | `--opencode` | `~/.config/opencode/skill/hum1izer/SKILL.md` |
 | `--hermes` | `~/.hermes/skills/devops/hum1izer/SKILL.md` |

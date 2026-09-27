@@ -70,12 +70,12 @@ make skills                         # собрать и поставить вс�
 
 `--hooks` ставит одно и то же для каждого агента, который это умеет: свод
 правил в начале сессии и проверку файла сразу после того, как агент его правил.
-Проверяется только этот файл, не дерево, и молча, когда находок нет.
+Проверяются только строки этого файла, изменённые против HEAD (неотслеживаемый
+файл - целиком), не дерево, и молча, когда находок нет.
 
 | Агент | Что пишет `--hooks` |
 |---|---|
 | `--claude` | `~/.claude/settings.json`, ключи `hooks.SessionStart` и `hooks.PostToolUse` |
-| `--zcode` | `~/.zcode/cli/config.json`, ключи `hooks.events.*` и `hooks.enabled` |
 | `--codex` | `~/.codex/hooks.json`, тот же формат событий |
 | `--opencode` | плагин `~/.config/opencode/plugin/hum1izer.js` |
 | `--pi` | расширение `~/.pi/agent/extensions/hum1izer.ts` |
@@ -89,7 +89,6 @@ make skills                         # собрать и поставить вс�
 | Флаг | Куда |
 |---|---|
 | `--claude` | `~/.claude/skills/hum1izer/SKILL.md` |
-| `--zcode` | `~/.zcode/skills/hum1izer/SKILL.md` |
 | `--codex` | `~/.codex/skills/hum1izer/SKILL.md` |
 | `--opencode` | `~/.config/opencode/skill/hum1izer/SKILL.md` |
 | `--hermes` | `~/.hermes/skills/devops/hum1izer/SKILL.md` |
