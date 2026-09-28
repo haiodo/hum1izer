@@ -149,9 +149,8 @@ func hookPostEdit(args []string) int {
 	return 0
 }
 
-// changedLines - строки файла, отличные от HEAD, для --lines: без этого хук
-// приносил агенту старые находки со всего файла, и тот чинил чужие комментарии.
-// tracked=false - файла нет в git, проверяется целиком.
+// changedLines - строки, отличные от HEAD, для --lines: иначе хук приносил старые находки всего
+// файла. tracked=false - файла нет в git, проверяется целиком.
 func changedLines(path string) (lines string, tracked bool) {
 	dir := filepath.Dir(path)
 	if exec.Command("git", "-C", dir, "ls-files", "--error-unmatch", "--", path).Run() != nil {
@@ -191,9 +190,8 @@ func changedLines(path string) (lines string, tracked bool) {
 // blockHead - шапка блока в md-отчёте: строка "## место" и за ней "block <hash> |".
 var blockHead = regexp.MustCompile(`(?m)^## .*\nblock ([0-9a-f]+) \|`)
 
-// unseen убирает из отчёта блоки, уже показанные в этой сессии для этого файла,
-// и запоминает новые. Hash блока зависит от текста: поправленный блок покажется снова.
-// Без session_id (opencode, pi) кеш общий на все сессии.
+// unseen отсекает блоки, уже показанные в сессии для файла; hash зависит от текста, поправленный
+// блок покажется снова. Без session_id (opencode, pi) кеш общий.
 func unseen(report, session, file string) string {
 	heads := blockHead.FindAllStringSubmatchIndex(report, -1)
 	if len(heads) == 0 {
