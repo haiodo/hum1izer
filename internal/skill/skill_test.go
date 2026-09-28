@@ -95,6 +95,9 @@ func TestInstallHooksTwice(t *testing.T) {
 	if !strings.Contains(string(b), "hook session-start") {
 		t.Error("хук session-start не прописан")
 	}
+	if !strings.Contains(string(b), "hook subagent-start") {
+		t.Error("хук subagent-start не прописан")
+	}
 }
 
 func TestInstallHooksPlugins(t *testing.T) {

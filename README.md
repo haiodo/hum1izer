@@ -79,7 +79,7 @@ nothing.
 
 | Agent | What `--hooks` writes |
 |---|---|
-| `--claude` | `~/.claude/settings.json`, keys `hooks.SessionStart` and `hooks.PostToolUse` |
+| `--claude` | `~/.claude/settings.json`, keys `hooks.SessionStart`, `hooks.SubagentStart` and `hooks.PostToolUse` |
 | `--codex` | `~/.codex/hooks.json`, the same event format |
 | `--opencode` | plugin `~/.config/opencode/plugin/hum1izer.js` |
 | `--pi` | extension `~/.pi/agent/extensions/hum1izer.ts` |

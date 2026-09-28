@@ -17,6 +17,7 @@ import (
 const hookUsage = `hum1izer hook - hooks for an agent, installed via install --hooks.
 
   hum1izer hook session-start   print the rule summary into the session context
+  hum1izer hook subagent-start  same for a subagent
   hum1izer hook post-edit       check the file the agent just edited
   hum1izer hook post-edit --file F   same, but path as a flag and plain text reply
   hum1izer hook post-edit --force-show   repeat blocks already shown this session
@@ -63,6 +64,9 @@ func runHook(args []string) int {
 		}
 		emit("SessionStart", sessionText())
 		return 0
+	case "subagent-start":
+		emit("SubagentStart", sessionText())
+		return 0
 	case "post-edit":
 		return hookPostEdit(args[1:])
 	}
@@ -95,6 +99,7 @@ func hookPostEdit(args []string) int {
 	if !plain {
 		var ev struct {
 			SessionID string `json:"session_id"`
+			AgentID   string `json:"agent_id"`
 			CWD       string `json:"cwd"`
 			ToolInput struct {
 				FilePath string `json:"file_path"`
@@ -105,6 +110,10 @@ func hookPostEdit(args []string) int {
 			return 0
 		}
 		path, cwd, session = ev.ToolInput.FilePath, ev.CWD, ev.SessionID
+		// Субагент приходит с session_id родителя: без agent_id он не увидит блоки, показанные другому.
+		if ev.AgentID != "" {
+			session += "-" + ev.AgentID
+		}
 		if path == "" {
 			path = ev.ToolInput.Path
 		}

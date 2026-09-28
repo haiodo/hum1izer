@@ -18,6 +18,8 @@ type hookSpec struct {
 
 var hookSpecs = []hookSpec{
 	{event: "SessionStart", matcher: "startup|resume|clear", args: "hook session-start"},
+	// SessionStart в субагентах не срабатывает, правила им несёт SubagentStart.
+	{event: "SubagentStart", matcher: "", args: "hook subagent-start"},
 	// Матчер - регулярка по имени инструмента, а имена у агентов разные:
 	// Claude Code правит файл через Edit и Write, Codex - через apply_patch.
 	{event: "PostToolUse", matcher: "Edit|Write|apply_patch", args: "hook post-edit"},

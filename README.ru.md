@@ -75,7 +75,7 @@ make skills                         # собрать и поставить вс�
 
 | Агент | Что пишет `--hooks` |
 |---|---|
-| `--claude` | `~/.claude/settings.json`, ключи `hooks.SessionStart` и `hooks.PostToolUse` |
+| `--claude` | `~/.claude/settings.json`, ключи `hooks.SessionStart`, `hooks.SubagentStart` и `hooks.PostToolUse` |
 | `--codex` | `~/.codex/hooks.json`, тот же формат событий |
 | `--opencode` | плагин `~/.config/opencode/plugin/hum1izer.js` |
 | `--pi` | расширение `~/.pi/agent/extensions/hum1izer.ts` |
