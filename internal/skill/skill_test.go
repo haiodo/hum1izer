@@ -113,6 +113,13 @@ func TestInstallHooksPlugins(t *testing.T) {
 		if !strings.Contains(string(b), "post-edit") {
 			t.Errorf("%s: плагин не зовёт post-edit", rel)
 		}
+		if rel == ".config/opencode/plugin/hum1izer.js" {
+			for _, want := range []string{"export default", `id: "hum1izer"`, `ctx.session.hook("context"`, `ctx.tool.hook("execute.after"`, "event.result.output"} {
+				if !strings.Contains(string(b), want) {
+					t.Errorf("%s: нет API OpenCode 2 %q", rel, want)
+				}
+			}
+		}
 	}
 }
 
