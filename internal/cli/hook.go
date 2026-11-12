@@ -22,6 +22,8 @@ const hookUsage = `hum1izer hook - hooks for an agent, installed via install --h
   hum1izer hook post-edit --file F   same, but path as a flag and plain text reply
   hum1izer hook post-edit --force-show   repeat blocks already shown this session
   hum1izer hook session-start --text rule summary without the JSON wrapper
+  hum1izer hook subagent-start --text  same
+  hum1izer hook post-edit --text   plain text reply for a stdin event (Kimi)
 
 Both commands are meant to run from an agent, not by hand: post-edit reads a
 JSON event from stdin and stays silent if there are no findings. Agents
@@ -65,6 +67,10 @@ func runHook(args []string) int {
 		emit("SessionStart", sessionText())
 		return 0
 	case "subagent-start":
+		if len(args) > 1 && args[1] == "--text" {
+			fmt.Println(sessionText())
+			return 0
+		}
 		emit("SubagentStart", sessionText())
 		return 0
 	case "post-edit":
@@ -83,15 +89,17 @@ func blocks(report string) string {
 	return ""
 }
 
-// hookPostEdit проверяет один файл после правки. Claude Code шлёт событие в stdin и ждёт JSON,
-// остальные агенты зовут --file и печатают ответ сами.
+// hookPostEdit проверяет один файл после правки. Claude Code и Kimi шлют
+// событие в stdin, остальные зовут --file. --text печатает ответ без JSON.
 func hookPostEdit(args []string) int {
-	path, cwd, session, plain, force := "", "", "", false, false
+	path, cwd, session, plain, raw, force := "", "", "", false, false, false
 	for i := 0; i < len(args); i++ {
 		switch {
 		case args[i] == "--file" && i+1 < len(args):
 			path, plain = args[i+1], true
 			i++
+		case args[i] == "--text":
+			raw = true
 		case args[i] == "--force-show":
 			force = true
 		}
@@ -150,7 +158,7 @@ func hookPostEdit(args []string) int {
 	}
 	text := "hum1izer found the following in " + path + ". Address the findings: fix the block " +
 		"or mark `fix --block <id> --keep` if the rule fired for nothing.\n\n" + report
-	if plain {
+	if plain || raw {
 		fmt.Println(text)
 		return 0
 	}

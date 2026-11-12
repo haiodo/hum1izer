@@ -50,7 +50,7 @@ a side effect of an edit.
 hum1izer install --claude --hooks    # or --codex, --opencode, --pi, --all
 ```
 
-Two things get wired, whatever the agent:
+Two things can be wired:
 
 - **At the start of a session** the rules above land in the model's context, so
   comments come out right the first time instead of being fixed afterwards.
@@ -58,11 +58,18 @@ Two things get wired, whatever the agent:
   against HEAD (an untracked file is checked whole) and reports back only when
   something is found. Old findings elsewhere in the file stay out of it.
 
-Claude Code and Codex take them as hooks in their settings; opencode and
-pi get a small plugin file that calls the same two commands. `--dir .` puts everything
-in the project instead of the home directory.
+Claude Code and Codex take both as hooks in their settings; opencode and
+pi get a small plugin file that calls the same two commands. `--dir .` puts
+everything in the project instead of the home directory.
 
-With the hooks on, don't run the check by hand after an edit - it already ran.
+DeepSeek Harness and the shared agents root get the first half only: the rules
+go into `AGENTS.md`, which the harness loads at session start. Nothing there
+runs a check after an edit, so run it yourself on the file you touched.
+
+Hermes has nothing to wire at all.
+
+With both halves wired, don't run the check by hand after an edit - it already
+ran.
 Your job is to act on what it reports: fix the block, or `--keep` it when the
 rule fired for nothing.
 

@@ -59,7 +59,7 @@ hum1izer upgrade --check   # только посмотреть, есть ли н
 ## Скиллы для агентов
 
 ```bash
-hum1izer install --claude --codex --opencode --hermes --pi
+hum1izer install --claude --codex --dsh --kimi --opencode --hermes --pi
 hum1izer install --all              # все сразу
 hum1izer install --claude --dir .   # в проект, а не в домашний каталог
 hum1izer install --claude --hooks   # плюс хуки Claude Code
@@ -77,11 +77,23 @@ make skills                         # собрать и поставить вс�
 |---|---|
 | `--claude` | `~/.claude/settings.json`, ключи `hooks.SessionStart`, `hooks.SubagentStart` и `hooks.PostToolUse` |
 | `--codex` | `~/.codex/hooks.json`, тот же формат событий |
+| `--kimi` | `[[hooks]]` в `~/.kimi-code/config.toml` (или `$KIMI_CODE_HOME/config.toml`), ответ уходит в контекст текстом |
 | `--opencode` | плагин `~/.config/opencode/plugin/hum1izer.js` |
 | `--pi` | расширение `~/.pi/agent/extensions/hum1izer.ts` |
+| `--dsh` | свод правил в `~/.dsh/AGENTS.md` |
+| `--agents` | свод правил в `~/.agents/AGENTS.md` |
 
-У Hermes и общего `--agents` цепляться не за что; там `--hooks` так и говорит
-и ничего не ставит.
+DeepSeek Harness и общий корень агентов получают только первую половину:
+харнесс грузит `AGENTS.md` в начале сессии, но проверку после правки там
+никто не запускает, поэтому она остаётся ручной. У Hermes цепляться не за
+что; там `--hooks` так и говорит и ничего не ставит. `config.toml` Kimi
+сливается, а не переписывается: чужие ключи и чужие `[[hooks]]` остаются,
+записи hum1izer живут между маркерами-комментариями и заменяются при
+переустановке.
+
+`--dir` переносит эти файлы как и всё остальное, но DSH читает `AGENTS.md`
+из своего домашнего каталога и из корня проекта - не из `.dsh/` или `.agents/`
+в произвольном каталоге.
 
 Формат общий - [Agent Skills](https://agentskills.io), различаются только шапка
 и путь:
@@ -90,6 +102,8 @@ make skills                         # собрать и поставить вс�
 |---|---|
 | `--claude` | `~/.claude/skills/hum1izer/SKILL.md` |
 | `--codex` | `~/.codex/skills/hum1izer/SKILL.md` |
+| `--dsh` | `~/.dsh/skills/hum1izer/SKILL.md` |
+| `--kimi` | `~/.kimi-code/skills/hum1izer/SKILL.md` (или `$KIMI_CODE_HOME/skills/`) |
 | `--opencode` | `~/.config/opencode/skill/hum1izer/SKILL.md` |
 | `--hermes` | `~/.hermes/skills/devops/hum1izer/SKILL.md` |
 | `--pi` | `~/.pi/agent/skills/hum1izer/SKILL.md` |
@@ -98,6 +112,9 @@ make skills                         # собрать и поставить вс�
 opencode читает ещё и `~/.claude/skills` с `~/.agents/skills`, так что ему
 хватит и `--claude`, и `--agents` - отдельный флаг нужен, только если хочется
 держать скилл в его собственном каталоге.
+
+DeepSeek Harness смотрит в `~/.dsh/skills` и `~/.agents/skills`: `--dsh` кладёт
+в родной каталог, а `--agents` хватит, если держать одну копию на всех агентов.
 
 Существующий файл не перезаписывается без `--force`. Скилл описывает цикл
 правки, правила хорошего комментария и список того, что трогать нельзя:

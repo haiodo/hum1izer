@@ -55,6 +55,17 @@ name: ` + name + `
 description: "` + description + `"
 license: MIT
 ---`},
+	{Flag: "dsh", Agent: "DeepSeek Harness", Dir: ".dsh/skills/" + name, frontMatter: `---
+name: ` + name + `
+description: "` + description + `"
+license: MIT
+user-invocable: true
+---`},
+	{Flag: "kimi", Agent: "Kimi Code", Dir: ".kimi-code/skills/" + name, frontMatter: `---
+name: ` + name + `
+description: "` + description + `"
+license: MIT
+---`},
 	{Flag: "hermes", Agent: "Hermes", Dir: ".hermes/skills/devops/" + name, frontMatter: `---
 name: ` + name + `
 description: "` + description + `"
@@ -94,6 +105,8 @@ const usage = `hum1izer install - install the skill for an agent.
 Agents:
   --claude   ~/.claude/skills/hum1izer/SKILL.md
   --codex    ~/.codex/skills/hum1izer/SKILL.md
+  --dsh      ~/.dsh/skills/hum1izer/SKILL.md
+  --kimi     ~/.kimi-code/skills/hum1izer/SKILL.md
   --opencode ~/.config/opencode/skill/hum1izer/SKILL.md
   --hermes   ~/.hermes/skills/devops/hum1izer/SKILL.md
   --pi       ~/.pi/agent/skills/hum1izer/SKILL.md
@@ -106,7 +119,9 @@ Other:
   --force    overwrite if the file already exists
   --hooks    install hooks for the selected agents: rules at session start and
              a check right after editing a file. Claude Code and Codex get
-             them in settings, opencode and pi as a plugin
+             them in settings, opencode and pi as a plugin; DeepSeek Harness
+             and agents get the rules in AGENTS.md; Kimi Code - in config.toml;
+             Hermes has nothing
   --print    print SKILL.md to stdout
   --repo     print SKILL.md for the repo root (make skill)
 `
@@ -157,10 +172,23 @@ func Run(args []string, version string) int {
 		}
 		base = home
 	}
+	// Kimi читает свои скиллы и config.toml из $KIMI_CODE_HOME, если он задан.
+	kimiEnv := false
+	kimiBase := base
+	if *root == "" {
+		if env := os.Getenv("KIMI_CODE_HOME"); env != "" {
+			kimiEnv, kimiBase = true, env
+		}
+	}
 
 	exit := 0
 	for _, t := range chosen {
-		path := filepath.Join(base, filepath.FromSlash(t.Dir), "SKILL.md")
+		rel := t.Dir
+		if t.Flag == "kimi" && kimiEnv {
+			// $KIMI_CODE_HOME уже дом Kimi: префикс лишний.
+			rel = strings.TrimPrefix(rel, ".kimi-code/")
+		}
+		path := filepath.Join(targetBase(base, kimiBase, kimiEnv, t.Flag), filepath.FromSlash(rel), "SKILL.md")
 		if _, err := os.Stat(path); err == nil && !*force {
 			fmt.Printf("  = %-10s already installed: %s (--force overwrites)\n", t.Flag, path)
 			continue
@@ -186,7 +214,7 @@ func Run(args []string, version string) int {
 		for _, t := range chosen {
 			flags = append(flags, t.Flag)
 		}
-		if code := installHooks(base, flags, *force); code != 0 {
+		if code := installHooks(base, kimiBase, kimiEnv, flags, *force); code != 0 {
 			exit = code
 		}
 	}
@@ -216,9 +244,19 @@ hum1izer install --all                         # разложить этот с�
 
 ## Supported assistants
 
-Claude Code, Codex, opencode, Hermes, Pi, agents. ` + "`hum1izer install --all`" + `
+Claude Code, Codex, Kimi Code, opencode, Hermes, Pi, DeepSeek Harness, agents.
+` + "`hum1izer install --all`" + `
 кладёт SKILL.md в каталог каждого, ` + "`--claude`" + ` и остальные флаги - поштучно.
 `
+
+// targetBase возвращает каталог для цели агента: Kimi живёт в $KIMI_CODE_HOME,
+// если он задан вместо домашнего.
+func targetBase(base, kimiBase string, kimiEnv bool, flag string) string {
+	if flag == "kimi" && kimiEnv {
+		return kimiBase
+	}
+	return base
+}
 
 // RepoFile - содержимое SKILL.md для корня. Версия не подставляется: файл
 // лежит в git, и строка с ней меняла бы его на каждом релизе впустую.

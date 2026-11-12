@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/haiodo/hum1izer/internal/code"
@@ -73,5 +74,48 @@ func TestUnseenOncePerSession(t *testing.T) {
 	}
 	if got := unseen(report, "s2", "/a.go"); got != report {
 		t.Errorf("новая сессия видит всё заново:\n%s", got)
+	}
+}
+
+// Kimi шлёт событие в stdin и складывает stdout хука в контекст как есть:
+// ответ должен быть текстом без JSON-обёртки hookSpecificOutput.
+func TestHookPostEditText(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "hum1izer")
+	build := exec.Command("go", "build", "-o", bin, ".")
+	build.Dir = filepath.Join("..", "..")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	git := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	file := filepath.Join(dir, "a.go")
+	if err := os.WriteFile(file, []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git("init", "-q")
+	git("add", ".")
+	git("commit", "-q", "-m", "init")
+	if err := os.WriteFile(file, []byte("package a\n\n// Данная функция выполняет инициализацию системы\nfunc A() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ev := fmt.Sprintf(`{"session_id":"s1","cwd":%q,"tool_input":{"file_path":%q}}`, dir, file)
+	cmd := exec.Command(bin, "hook", "post-edit", "--text", "--force-show")
+	cmd.Env = append(os.Environ(), "XDG_CACHE_HOME="+t.TempDir())
+	cmd.Stdin = strings.NewReader(ev)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+	s := string(out)
+	if strings.HasPrefix(strings.TrimSpace(s), "{") {
+		t.Errorf("ответ в JSON-обёртке, ожидался текст:\n%s", s)
+	}
+	if !strings.Contains(s, "hum1izer found the following") {
+		t.Errorf("нет текста находок:\n%s", s)
 	}
 }
